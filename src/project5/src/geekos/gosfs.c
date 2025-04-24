@@ -179,16 +179,59 @@ static int GOSFS_Open_Directory(struct Mount_Point *mountPoint, const char *path
  */
 static int GOSFS_Delete(struct Mount_Point *mountPoint, const char *path)
 {
-    TODO("GeekOS filesystem delete operation");
+    // TODO("GeekOS filesystem delete operation");
+
+    int rc = 0;
+    struct GOSFS *fs = mountPoint->fsData;
+    ulong_t inodePtr, dirInodePtr;
+    struct GOSFS_Dir_Entry dirInode;
+    char *dirPath = 0;
+
+    Mutex_Lock(&fs->lock);
+
+    if ( File_Is_Open(fs, path) != 0) return EACCESS;
+
+    rc = Find_File(fs, path, &inodePtr, 0);
+    if (rc != 0) goto fail;
+
+    dirPath = Get_Parent_Dir_Path(path);
+
 }
 
 /*
  * Get metadata (size, permissions, etc.) of file named by given path.
  * 获取文件元数据（大小，权限等）
  */
-static int GOSFS_Stat(struct Mount_Point *mountPoint, const char *path, struct VFS_File_Stat *stat)
+static int GOSFS_Stat(
+    struct Mount_Point *mountPoint, 
+    const char *path, 
+    struct VFS_File_Stat *stat
+)
 {
-    TODO("GeekOS filesystem stat operation");
+    // TODO("GeekOS filesystem stat operation");
+    int rc = 0;
+    struct GOSFS *fs = mountPoint->fsData;
+    ulong_t inodePtr;
+    struct GOSFS_Dir_Entry inode;
+
+    Mutex_Lock(&fs->lock);
+    rc = Lookup_File(fs, path, &inode);
+
+    if (rc == 0) {
+        Mutex_Unlock(&fs->lock);
+        return rc;
+    }
+
+    Mutex_Unlock(&fs->lock);
+
+    stat->size = inode.size;
+    stat->isDirectory = (inode.flags & GOSFS_DIRENTRY_ISDIRECTORY) != 0;
+    stat->isSetuid = (inode.flags & GOSFS_DIRENTRY_ISSETUID) != 0;
+    
+    // Copy ACL entries to stat structure
+    memcpy(stat->acls, inode.acl, sizeof(VFS_ACL_Entry));
+
+    return 0;
 }
 
 /*
