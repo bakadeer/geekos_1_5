@@ -198,7 +198,15 @@ static int GOSFS_Stat(struct Mount_Point *mountPoint, const char *path, struct V
  */
 static int GOSFS_Sync(struct Mount_Point *mountPoint)
 {
-    TODO("GeekOS filesystem sync operation");
+    // TODO("GeekOS filesystem sync operation");
+    int rc = 0;
+    struct GOSFS *fs = mountPoint->fsData;
+
+    Mutex_Lock(&fs->lock);
+    rc = Sync_FS_Buffer_Cache(fs->cache);
+    Mutex_Unlock(&fs->lock);
+
+    return rc;
 }
 
 /*static*/ struct Mount_Point_Ops s_gosfsMountPointOps = {
@@ -296,6 +304,52 @@ fail:
 static int GOSFS_Mount(struct Mount_Point *mountPoint)
 {
     // TODO("GeekOS filesystem mount operation");
+
+    int rc = 0;
+    struct FS_Buffer* buf = 0;
+    struct Superblock* superblock;
+    struct GOSFS* fs_instance;
+
+
+    cache = Create_FS_Buffer_Cache(mountPoint->dev, GOSFS_FS_BLOCK_SIZE);
+    if (cache == 0) return ENOMEM;
+
+    rc = Get_FS_Buffer(cache, GOSFS_SUPERBLOCK_OFFSEET, &buf);
+    if (rc != 0) goto fail;
+    superblock = (struct Superblock*) buf->data;
+
+    if (superblock->magic != GOSFS_MAGIC){
+        rc = EINVALIDFS;
+        goto fail;
+    }
+
+    mountPoint->fsData = Malloc(sizeof(struct GOSFS));
+    if (mountPoint->fsData == 0) return ENOMEM;
+
+    fs_instance = mountPoint->fsData;
+    mountPoint->ops = &s_gosfsMountPointOps;
+
+    fs->numBlocks = superblock->numBlocks;
+    fs->blockMapOffset = superblock->blockMapOffset;
+    fs->inodeTableOffset = superblock->inodeTableOffset;
+    fs->dataBlockOffset = superblock->dataBlockOffset;
+    fs->cache = cache;
+    Mutex_Init(&fs->lock);
+    Clear_GOSFS_File_List(&fs->filesOpend);
+
+    Release_FS_Buffer(cache, buf);
+    return 0;
+
+fail:
+    if (mountPoint->ops != 0) mountPoint->ops = 0;
+    if (fs != 0){
+        Free(fs);
+        mountPoint->fsData = 0;
+    }
+    if (Buf_In_Use(buf)) Release_FS_Buffer(cache, buf);
+    if (cache != 0) Destroy_FS_Buffer_Cache(cache);
+
+    return rc;
 
     
 }
