@@ -228,7 +228,10 @@ static void Free_Buffer(struct FS_Buffer *buf)
 /*
  * Create a cache of filesystem buffers.
  */
-struct FS_Buffer_Cache *Create_FS_Buffer_Cache(struct Block_Device *dev, uint_t fsBlockSize)
+struct FS_Buffer_Cache *Create_FS_Buffer_Cache(
+    struct Block_Device *dev, 
+    uint_t fsBlockSize
+)
 {
     struct FS_Buffer_Cache *cache;
 
@@ -305,7 +308,11 @@ int Destroy_FS_Buffer_Cache(struct FS_Buffer_Cache *cache)
 /*
  * Get a buffer for given filesystem block.
  */
-int Get_FS_Buffer(struct FS_Buffer_Cache *cache, ulong_t fsBlockNum, struct FS_Buffer **pBuf)
+int Get_FS_Buffer(
+    struct FS_Buffer_Cache *cache, 
+    ulong_t fsBlockNum, 
+    struct FS_Buffer **pBuf
+)
 {
     int rc;
 
