@@ -56,7 +56,7 @@ void Read_Line(char* buf, size_t bufSize)
     bool done = false;
     int startrow = 0, startcol = 0;
     Get_Cursor(&startrow, &startcol);
-    /*Print("Start column is %d\n", startcol); */
+    // Print("Start row: %d, column: %d\n", startrow, startcol);
 
     bufSize--;
     do {
@@ -70,38 +70,38 @@ void Read_Line(char* buf, size_t bufSize)
 
 	if (k == ASCII_BS) {
 	    if (n > 0) {
-		char last = *(ptr - 1);
-		int newcol = startcol;
-		size_t i;
+			char last = *(ptr - 1);
+			int newcol = startcol;
+			size_t i;
 
-		/* Back up in line buffer */
-		--ptr;
-		--n;
+			/* Back up in line buffer */
+			--ptr;
+			--n;
 
-		if (s_echo) {
-		    /*
-		     * Figure out what the column position of the last
-		     * character was
-		     */
-		    for (i = 0; i < n; ++i) {
-			char ch = buf[i];
-			if (ch == '\t') {
-			    int rem = newcol % TABWIDTH;
-			    newcol += (rem == 0) ? TABWIDTH : (TABWIDTH - rem);
-			} else {
-			    ++newcol;
+			if (s_echo) {
+				/*
+				* Figure out what the column position of the last
+				* character was
+				*/
+				for (i = 0; i < n; ++i) {
+					char ch = buf[i];
+					if (ch == '\t') {
+						int rem = newcol % TABWIDTH;
+						newcol += (rem == 0) ? TABWIDTH : (TABWIDTH - rem);
+					} else {
+						++newcol;
+					}
+				}
+
+				/* Erase last character */
+				if (last != '\t')
+					last = ' ';
+				Put_Cursor(startrow, newcol);
+				Put_Char(last);
+				Put_Cursor(startrow, newcol);
 			}
-		    }
-
-		    /* Erase last character */
-		    if (last != '\t')
-			last = ' ';
-		    Put_Cursor(startrow, newcol);
-		    Put_Char(last);
-		    Put_Cursor(startrow, newcol);
 		}
-	    }
-	    continue;
+		continue;
 	}
 
 	if (s_echo)

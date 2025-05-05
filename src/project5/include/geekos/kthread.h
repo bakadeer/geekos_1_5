@@ -66,6 +66,11 @@ struct Kernel_Thread {
      */
     int currentReadyQueue;
     bool blocked;
+
+#define MAX_SEMAPHORES_REFS 8
+#define REF_TO_NO_SEMAPHORE -1
+    volatile uint_t registeredSemaphores;
+    int semaphores[MAX_SEMAPHORES_REFS];
 };
 
 /*
@@ -153,6 +158,15 @@ extern volatile int g_preemptionDisabled;
  * Thread-local data information
  */
 #define MIN_DESTRUCTOR_ITERATIONS 4
+
+// Schedule policy
+#define SCHEDULING_RR 0
+#define SCHEDULING_MLFQ 1
+#define DEFAULT_SCHEDULING_POLICY SCHEDULING_RR
+
+extern volatile int g_schedulingPolicy;
+
+void Move_Threads_To_0_Except_Idle(void);
 
 typedef void (*tlocal_destructor_t)(void *);
 typedef unsigned int tlocal_key_t;

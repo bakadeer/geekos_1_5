@@ -81,10 +81,10 @@ static void Timer_Interrupt_Handler(struct Interrupt_State* state)
 	if (pendingTimerEvents[i].ticks == 0) {
 	    if (timerDebug) Print("timer: event %d expired (%d ticks)\n", 
 	        pendingTimerEvents[i].id, pendingTimerEvents[i].origTicks);
-	    (pendingTimerEvents[i].callBack)(pendingTimerEvents[i].id);
-	} else {
-	    pendingTimerEvents[i].ticks--;
-	}
+            (pendingTimerEvents[i].callBack)(pendingTimerEvents[i].id);
+        } else {
+            pendingTimerEvents[i].ticks--;
+        }
     }
 
     /*
@@ -93,16 +93,24 @@ static void Timer_Interrupt_Handler(struct Interrupt_State* state)
      * to choose a new thread.
      */
     if (current->numTicks >= g_Quantum) {
-	g_needReschedule = true;
-	/*
-	 * The current process is moved to a lower priority queue,
-	 * since it consumed a full quantum.
-	 */
-        if (current->currentReadyQueue < (MAX_QUEUE_LEVEL - 1)) {
-            /*Print("process %d moved to ready queue %d\n", current->pid, current->currentReadyQueue); */
-            current->currentReadyQueue++;
+        g_needReschedule = true;
+        
+        // Simply disable moving between queues :>
+        // As this project gives me the ability to add
+        // code outside `TODO` functions, why not modify
+        // the unreasonable code :)
+        // Reserving moving threads brings me only headache.
+        // Make life happy and easy.
+        if (g_schedulingPolicy == SCHEDULING_MLFQ) {
+            /*
+            * The current process is moved to a lower priority queue,
+            * since it consumed a full quantum.
+            */
+            if (current->currentReadyQueue < (MAX_QUEUE_LEVEL - 1)) {
+                /*Print("process %d moved to ready queue %d\n", current->pid, current->currentReadyQueue); */
+                current->currentReadyQueue++;
+            }
         }
-
     }
 
 
@@ -117,15 +125,15 @@ static void Timer_Calibrate(struct Interrupt_State* state)
 {
     Begin_IRQ(state);
     if (g_numTicks < CALIBRATE_NUM_TICKS)
-	++g_numTicks;
+        ++g_numTicks;
     else {
-	/*
-	 * Now we can look at EAX, which reflects how many times
-	 * the loop has executed
-	 */
-	/*Print("Timer_Calibrate: eax==%d\n", state->eax);*/
-	s_spinCountPerTick = INT_MAX  - state->eax;
-	state->eax = 0;  /* make the loop terminate */
+        /*
+        * Now we can look at EAX, which reflects how many times
+        * the loop has executed
+        */
+        /*Print("Timer_Calibrate: eax==%d\n", state->eax);*/
+        s_spinCountPerTick = INT_MAX  - state->eax;
+        state->eax = 0;  /* make the loop terminate */
     }
     End_IRQ(state);
 }

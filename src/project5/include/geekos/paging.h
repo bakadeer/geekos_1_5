@@ -24,6 +24,7 @@ struct User_Context;
 
 #define PAGE_DIRECTORY_INDEX(x)	(((x) >> 22) & 0x3ff)
 #define PAGE_TABLE_INDEX(x)	(((x) >> 12) & 0x3ff)
+#define PAGE_OFFSET(x) (x & 0xFFF)
 
 #define PAGE_ALLIGNED_ADDR(x)   (((unsigned int) (x)) >> 12)
 #define PAGE_ADDR(x)   (PAGE_ALLIGNED_ADDR(x) << 12)

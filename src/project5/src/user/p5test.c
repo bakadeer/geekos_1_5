@@ -13,13 +13,16 @@
 #include <fileio.h>
 #include <string.h>
 
+int debugP5t = 0;
+#define Debug(args...) if (debugP5t) Print("P5t:"args)
+
 int doTest( char * testName, int (*testFunction)(), int points, int * score, int * totalTests, int * successfulTests)
 {
   int ret;
 
   (*totalTests)++;
 
-  Print("Testing: %s...", testName);
+  Print("Testing: %s...\n", testName);
 
   ret = testFunction();
 
@@ -95,17 +98,23 @@ int tBasicReadWrite()
 
   fd = Open("/d/basic", O_CREATE|O_WRITE);
   if (fd < 0)
-    return -1;
-
+    {
+      Debug("tBasicReadWrite: Open failed\n");
+      return -1;
+    }
+  Debug("tBasicReadWrite: Open succeeded\n");
   retW = Write( fd, buffer, 10);
   if (retW < 0)
-    return -1;
+    {
+      Debug("tBasicReadWrite: Write failed\n");
+      return -1;
+    }
 
   Close(fd);
+  Debug("tBasicReadWrite: Closed file\n");
 
   fd = Open("/d/basic", O_READ);
   if (fd < 0)
-    return -1;
 
   retR = Read( fd, buffer, 10);
   if (retR < 0)
@@ -137,7 +146,6 @@ int tReadFromWriteOnly()
     return -1;
 
   retR = Read( fd, buffer, 10);
-
   Close(fd);
 
   return (retR < 0)  ? 1 : -1;
@@ -177,8 +185,9 @@ int tCloseTwice()
   if (fd < 0)
     return -1;
 
+  Debug("tCloseTwice: First close\n");
   Close(fd);
-
+  Debug("tCloseTwice: Second close\n");
   retC = Close(fd);
 
   return (retC < 0)  ? 1 : -1;
@@ -204,6 +213,7 @@ int tBasicDelete()
 
   Close(fd);
 
+  Debug("tBasicDelete: Deleting /d/basic5f\n");
   retD = Delete("/d/basic5f");
 
   return (retD >= 0)  ? 1 : -1;
@@ -232,11 +242,14 @@ int tRecursivelyCreateDirectory()
   int retC;
 
   retC = Create_Directory("/d/dir2d");
+  Debug("tRecursivelyCreateDirectory: first create returned %d\n", retC);
 
   if (retC < 0) 
     return -1;
 
+  Debug("tRecursivelyCreateDirectory: creating /d/dir2d/dir3d\n");
   retC = Create_Directory("/d/dir2d/dir3d");
+  Debug("tRecursivelyCreateDirectory: second create returned %d\n", retC);
 
   return (retC >= 0)  ? 1 : -1;
 }
@@ -278,6 +291,7 @@ int tDeleteNonEmptyDirectory()
 
   Close(fd);
 
+  Debug("Deleting /d/dir4d with a file /d/dir4d/file\n");
   retD = Delete("/d/dir4d");
 
   return (retD >= 0) ? -1 : 1;
@@ -400,16 +414,19 @@ int tStatDirectory()
   retC = Create_Directory("/d/basic10d");
   if (retC < 0)
     return -1;
+  Debug("tStatDirectory: Create_Directory returned %d\n",retC);
 
   fd = Open_Directory("/d/basic10d");
   if (fd < 0)
     return -1;
-
+  Debug("tStatDirectory: Open_Directory returned %d\n",fd);
   retS = FStat(fd, &s);
+  Debug("tStatDirectory: FStat returned %d\n",retS);
 
   Close(fd);
-  Delete("/d/basic10d");
 
+  Delete("/d/basic10d");
+  Debug("tStatDirectory: Deleted\n");
   return ( (retS >= 0) && (s.isDirectory)  ) ? 1 : -1;
 }
 
@@ -439,12 +456,12 @@ int tReadEntry()
   fd = Open_Directory("/d/basic11d");
   if (fd < 0)
     return -1;
-
+  
+  Debug("Read_Entry start \n");
   retR = Read_Entry(fd, &dirEntry);
+  Debug("Read_Entry returned %d, dirEntry.name: %s, isDirectory: %d\n", retR, dirEntry.name, dirEntry.stats.isDirectory);
 
-  if ((retR < 0) ||
-      (strncmp(dirEntry.name, "d1", 2) != 0) ||
-       (! dirEntry.stats.isDirectory))
+  if ((retR < 0) || (strncmp(dirEntry.name, "d1", 2) != 0) || (! dirEntry.stats.isDirectory))
     return -1;
 
   retR = Read_Entry(fd, &dirEntry);
@@ -463,6 +480,7 @@ int tReadEntry()
   
   Close(fd);
 
+  Debug("Opening directory /d/basic11d\n");
   fd = Open_Directory("/d/basic11d");
   if (fd < 0)
     return -1;
@@ -511,17 +529,18 @@ int tFiveMegs()
       retS = Seek(fd, 100000 * i);
 
       if (retS < 0 )
-	{
-	  ret = -1;
-	  break;
-	}
+      {
+        ret = -1;
+        break;
+      }
 
       retW = Write( fd, buffer, 1000);
       if (retW != 1000)
-	{
-	  ret = -1;
-	  break;
-	}
+      {
+        
+        ret = -1;
+        break;
+      }
       Print(" %d", i);
     }
 
@@ -532,6 +551,7 @@ int tFiveMegs()
       Delete("/d/bigfile");
       return -1;
     }
+
 
   Print("Reading back from first 5MB ... \n");
 
@@ -545,28 +565,29 @@ int tFiveMegs()
       retS = Seek(fd, 100000 * i);
 
       if (retS < 0 )
-	{
-	  ret = -1;
-	  break;
-	}
+      {
+        ret = -1;
+        break;
+      }
 
       retR = Read( fd, buffer, 1000);
       if (retR != 1000)
-	{
-	  ret = -1;
-	  break;
-	}
+      {
+        ret = -1;
+        break;
+      }
 
       for (j = 0; j < 1000; j++ )
-	{
-	  if (buffer[j] != buffer2[j])
-	    {
-	      ret = -1;
-	      break;
-	    }
-	}
+      {
+        if (buffer[j] != buffer2[j])
+        {
+          ret = -1;
+          break;
+        }
+      }
 
       Print(" %d", i);
+      if (ret == -1) Print("#");
     }
 
   Close(fd);
@@ -587,59 +608,67 @@ int tWriteReread(int howManyKBs, char const * fileName)
     buffer[j] = j;
 
   fd = Open(fileName, O_CREATE|O_WRITE);
+  
   if (fd < 0)
     return -1;
 
   for (i = 0; i < (howManyKBs * 10); i++ )
+  {
+    retW = Write( fd, buffer, 100);
+    if (retW != 100)
     {
-      retW = Write( fd, buffer, 100);
-      if (retW != 100)
-	{
-	  ret = -1;
-	  break;
-	}
-      if (i%50 == 0)
-	Print(" %d", i);
+      ret = -1;
+      break;
     }
+    if (i%50 == 0)
+      Print(" %d", i);
+  }
 
+  Debug("tWriteReread: write done\n");
   Close(fd);
 
   if (ret != -1)
     {
       fd = Open(fileName, O_READ);
       if (fd < 0)
-	return -1;
+      return -1;
 
       for (i = 0; i < (howManyKBs * 10); i++ )
-	{
-	  retR = Read( fd, buffer2, 100);
+      {
+        retR = Read( fd, buffer2, 100);
 
-	  if (retR != 100)
-	    {
-	      ret = -1;
-	      break;
-	    }
+        if (retR != 100)
+          {
+            ret = -1;
+            break;
+          }
 
-	  for(j = 0; j < 100; j++)
-	    {
-	      if (buffer2[j] != j)
-		{
-		  ret = -1;
-		  break;
-		}
-	    }
-	  
-	  if (ret < 0 )
-	    break;
+        for(j = 0; j < 100; j++)
+          {
+            if (buffer2[j] != j)
+        {
+          Print("i %d, j %d, %d\n", i, j, buffer2[j]);
+          while (1);
 
-	  if (i%50 == 0)
-	    Print(" %d", i);
-	}
+          ret = -1;
+          
+          break;
+        }
+          }
+        
+        if (ret < 0 )
+          break;
+
+        if (i%50 == 0)
+          Print(" %d", i);
+      }
 
       Close(fd);
+      Debug("tWriteReread: read done\n");
       Delete(fileName);
+      Debug("tWriteReread: delete done\n");
     }
-
+    Debug("tWriteReread: test done\n");
   return ret;
 }
 
@@ -714,8 +743,8 @@ int main(int argc, char **argv)
   // 22
   doTest( "Delete Non-Empty Directory", tDeleteNonEmptyDirectory, 2,  &score, &totalTests, &successfulTests);
 
-  // 23
-  doTest( "10k Write/Reread", t10KWriteReread, 5,  &score, &totalTests, &successfulTests);
+  //23
+  doTest( "10k Write/Reread", t10KWriteReread, 5,  &score, &totalTests, &successfulTests); 
   // 24
   doTest( "100k Write/Reread", t100KWriteReread, 7,  &score, &totalTests, &successfulTests);
   // 25

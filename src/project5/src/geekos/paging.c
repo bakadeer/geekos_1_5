@@ -22,6 +22,7 @@
 #include <geekos/vfs.h>
 #include <geekos/crc32.h>
 #include <geekos/paging.h>
+#include <geekos/bitset.h>
 
 /* ----------------------------------------------------------------------
  * Public data
@@ -30,6 +31,9 @@
 /* ----------------------------------------------------------------------
  * Private functions/data
  * ---------------------------------------------------------------------- */
+
+static void *s_pagingDevMap;
+static struct Page **s_evictedPageList;
 
 #define SECTORS_PER_PAGE (PAGE_SIZE / SECTOR_SIZE)
 
@@ -80,6 +84,8 @@ static void Print_Fault_Info(uint_t address, faultcode_t faultCode)
 {
     ulong_t address;
     faultcode_t faultCode;
+    pde_t *dir = 0, *dirEntry = 0;
+    pte_t *table = 0, *tableEntry = 0;
 
     KASSERT(!Interrupts_Enabled());
 
@@ -91,12 +97,59 @@ static void Print_Fault_Info(uint_t address, faultcode_t faultCode)
     faultCode = *((faultcode_t *) &(state->errorCode));
 
     /* rest of your handling code here */
+    if (address < PAGE_SIZE) {
+        Print("Null pointer operation\n");
+        Print_Fault_Info(address, faultCode);
+        Dump_Interrupt_State(state);
+        Exit(-1);
+    }
+
+    dir = Get_PDBR();
+    KASSERT(dir != 0);
+    dirEntry = &dir[PAGE_DIRECTORY_INDEX(address)];
+
+    if (dirEntry->present == 1) {
+        table = (pte_t*) (dirEntry->pageTableBaseAddr << PAGE_POWER);
+        tableEntry = &table[PAGE_TABLE_INDEX(address)];
+
+        // Acceptable stack overflow
+        if (address >= STACK_BOTTOM && address < STACK_BOTTOM + PAGE_SIZE) {
+            void *page = Alloc_Pageable_Page(tableEntry , STACK_BOTTOM);
+            if (page == 0) {
+                Print("Cannot do a stack grow\n");
+                Exit(-1);
+            }
+
+            tableEntry->present = 1;
+            tableEntry->flags = VM_READ | VM_WRITE | VM_EXEC | VM_USER;
+            tableEntry->pageBaseAddr = (uint_t) page >> PAGE_POWER;
+            return;
+        }
+
+        // Swap
+        if (tableEntry->present == 0 && tableEntry->kernelInfo == KINFO_PAGE_ON_DISK) {
+            struct Page* page = s_evictedPageList[tableEntry->pageBaseAddr];
+            if (page == 0 || (page != 0 && page->vaddr != address)) {
+                Print("The page in paging file is lost\n");
+                Exit(-1);
+            }
+            page->flags &= ~(PAGE_PAGEABLE);
+            page->flags |= PAGE_LOCKED;
+            Read_From_Paging_File((void*) Get_Page_Address(page), address, tableEntry->pageBaseAddr);
+            page->flags &= ~(PAGE_LOCKED);
+            page->flags |= PAGE_PAGEABLE;
+            ++page->clock;
+
+            return;
+        }
+    }
+    
+
     Print ("Unexpected Page Fault received\n");
     Print_Fault_Info(address, faultCode);
     Dump_Interrupt_State(state);
     /* user faults just kill the process */
     if (!faultCode.userModeFault) KASSERT(0);
-
     /* For now, just kill the thread/process. */
     Exit(-1);
 }
@@ -121,7 +174,41 @@ void Init_VM(struct Boot_Info *bootInfo)
      * - Do not map a page at address 0; this will help trap
      *   null pointer references
      */
-    TODO("Build initial kernel page directory and page tables");
+    // TODO("Build initial kernel page directory and page tables");
+
+    int numPages = bootInfo->memSizeKB >> 2;
+    pde_t *kPageDir = 0;
+
+    kPageDir = Alloc_Page();
+    KASSERT(kPageDir != 0);
+    memset(kPageDir, 0, PAGE_SIZE);
+
+    for (int i = 1; i < numPages; ++i) {
+        ulong_t paddr = i * PAGE_SIZE;
+        pde_t *dirEntry = 0;
+        pte_t *table = 0, *tableEntry = 0;
+
+        dirEntry = &kPageDir[PAGE_DIRECTORY_INDEX(paddr)];
+        if (dirEntry->present == 1)
+            table = (pte_t*) (dirEntry->pageTableBaseAddr << PAGE_POWER);
+        else {
+            table = Alloc_Page();
+            KASSERT(table != 0);
+            memset(table, 0, PAGE_SIZE);
+
+            dirEntry->present = 1;
+            dirEntry->flags = VM_READ | VM_WRITE | VM_EXEC;
+            dirEntry->pageTableBaseAddr = (uint_t) table >> PAGE_POWER;
+        }
+        tableEntry = &table[PAGE_TABLE_INDEX(paddr)];
+
+        tableEntry->present = 1;
+        tableEntry->flags = VM_READ | VM_WRITE | VM_EXEC;
+        tableEntry->pageBaseAddr = paddr >> PAGE_POWER;
+    }
+
+    Enable_Paging(kPageDir);
+    Install_Interrupt_Handler(14, Page_Fault_Handler);
 }
 
 /**
@@ -131,7 +218,21 @@ void Init_VM(struct Boot_Info *bootInfo)
  */
 void Init_Paging(void)
 {
-    TODO("Initialize paging file data structures");
+    // TODO("Initialize paging file data structures");
+
+    struct Paging_Device *pagingDev = 0;
+    int numPages, numListBytes;
+
+    pagingDev = Get_Paging_Device();
+    KASSERT(pagingDev != 0);
+    numPages = pagingDev->numSectors / SECTORS_PER_PAGE;
+    numListBytes = numPages * sizeof(struct Page*);
+
+    s_pagingDevMap = Create_Bit_Set(numPages);
+    KASSERT(s_pagingDevMap != 0);
+    s_evictedPageList = Malloc(numListBytes);
+    KASSERT(s_evictedPageList != 0);
+    memset(s_evictedPageList, 0, numListBytes);
 }
 
 /**
@@ -143,7 +244,17 @@ void Init_Paging(void)
 int Find_Space_On_Paging_File(void)
 {
     KASSERT(!Interrupts_Enabled());
-    TODO("Find free page in paging file");
+    // TODO("Find free page in paging file");
+
+    struct Paging_Device *pagingDev = Get_Paging_Device();
+    int numPages = pagingDev->numSectors / SECTORS_PER_PAGE;
+
+    for (int i = 0; i < numPages; ++i) {
+        if (!Is_Bit_Set(s_pagingDevMap, i))
+            return i;
+    }
+
+    return -1;
 }
 
 /**
@@ -154,7 +265,10 @@ int Find_Space_On_Paging_File(void)
 void Free_Space_On_Paging_File(int pagefileIndex)
 {
     KASSERT(!Interrupts_Enabled());
-    TODO("Free page in paging file");
+    // TODO("Free page in paging file");
+
+    KASSERT(Is_Bit_Set(s_pagingDevMap, pagefileIndex));
+    Clear_Bit(s_pagingDevMap, pagefileIndex);
 }
 
 /**
@@ -169,7 +283,22 @@ void Write_To_Paging_File(void *paddr, ulong_t vaddr, int pagefileIndex)
 {
     struct Page *page = Get_Page((ulong_t) paddr);
     KASSERT(!(page->flags & PAGE_PAGEABLE)); /* Page must be locked! */
-    TODO("Write page data to paging file");
+    // TODO("Write page data to paging file");
+
+    struct Paging_Device *pagingDev = Get_Paging_Device();
+    KASSERT(!Is_Bit_Set(s_pagingDevMap, pagefileIndex));
+    int rc = Block_Write(
+        pagingDev->dev,
+        pagingDev->startSector + pagefileIndex * SECTORS_PER_PAGE,
+        paddr
+    );
+    if (rc != 0) {
+        Print("Cannot swap the required page to disk\n");
+        Exit(-1);
+    }
+
+    Set_Bit(s_pagingDevMap, pagefileIndex);
+    s_evictedPageList[pagefileIndex] = page;
 }
 
 /**
@@ -185,6 +314,24 @@ void Read_From_Paging_File(void *paddr, ulong_t vaddr, int pagefileIndex)
 {
     struct Page *page = Get_Page((ulong_t) paddr);
     KASSERT(!(page->flags & PAGE_PAGEABLE)); /* Page must be locked! */
-    TODO("Read page data from paging file");
+    // TODO("Read page data from paging file");
+
+    struct Paging_Device *pagingDev = Get_Paging_Device();
+    KASSERT(Is_Bit_Set(s_pagingDevMap, pagefileIndex));
+    int rc = Block_Read(
+        pagingDev->dev,
+        pagingDev->startSector + pagefileIndex * SECTORS_PER_PAGE,
+        paddr
+    );
+    if (rc != 0) {
+        Print("Cannot swap the required page back\n");
+        Exit(-1);
+    }
+
+    Clear_Bit(s_pagingDevMap, pagefileIndex);
 }
 
+// struct Page* Get_Evicted_Page(int pagefileIndex) {
+//     KASSERT(Is_Bit_Set(s_pagingDevMap, pagefileIndex));
+//     return s_evictedPageList[pagefileIndex];
+// }

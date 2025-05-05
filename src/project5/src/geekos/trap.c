@@ -25,8 +25,8 @@
 static void GPF_Handler(struct Interrupt_State* state)
 {
     /* Send the thread to the reaper... */
-    Print("Exception %d received, killing thread %p\n",
-	state->intNum, g_currentThread);
+    Print("Exception %d received, killing thread %p, pid: %d\n",
+	state->intNum, g_currentThread, g_currentThread->pid);
     Dump_Interrupt_State(state);
 
     Exit(-1);
@@ -45,12 +45,12 @@ static void Syscall_Handler(struct Interrupt_State* state)
 
     /* Make sure the the system call number refers to a legal value. */
     if (syscallNum < 0 || syscallNum >= g_numSyscalls) {
-	Print("Illegal system call %d by process %d\n",
-		syscallNum, g_currentThread->pid);
-	Exit(-1);
+        Print("Illegal system call %d by process %d\n",
+            syscallNum, g_currentThread->pid);
+        Exit(-1);
 
-	/* We will never get here */
-	KASSERT(false);
+        /* We will never get here */
+        KASSERT(false);
     }
 
     /*

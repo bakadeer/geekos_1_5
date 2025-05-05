@@ -79,7 +79,7 @@ REG_SKIP equ (11*4)
 ; an explicit processor-generated error code.
 ; The argument is the interrupt number.
 %macro Int_With_Err 1
-align 8
+align 8				; FIX: memory alignment
 	push	dword %1	; push interrupt number
 	jmp	Handle_Interrupt ; jump to common handler
 %endmacro

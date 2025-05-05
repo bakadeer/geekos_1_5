@@ -14,14 +14,6 @@
 #include <geekos/string.h>
 #include <geekos/screen.h>
 
-#define FIND_OFFSET_AND_BIT(bitPos,offset,bit)	\
-do {						\
-    offset = bitPos / 8;			\
-    bit = bitPos % 8;				\
-} while (0)
-
-#define FIND_NUM_BYTES(totalBits) \
-    ((totalBits / 8) + ((totalBits % 8 != 0) ? 1 : 0))
 
 void* Create_Bit_Set(uint_t totalBits)
 {

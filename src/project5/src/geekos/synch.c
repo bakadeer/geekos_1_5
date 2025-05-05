@@ -12,6 +12,10 @@
 #include <geekos/kassert.h>
 #include <geekos/screen.h>
 #include <geekos/synch.h>
+#include <geekos/string.h>
+
+int debugSyn = 1;
+#define Debug(args...) if (debugSyn) Print("Synch:"args)
 
 /*
  * NOTES:
@@ -22,6 +26,9 @@
  *   condition variables should only be used from kernel threads,
  *   with interrupts enabled.
  */
+
+volatile static uchar_t s_availableSemaphoresNum = MAX_SEMAPHORE_NUM;
+struct Semaphore g_allSemaphores[MAX_SEMAPHORE_NUM];
 
 /* ----------------------------------------------------------------------
  * Private functions
@@ -57,7 +64,8 @@ static __inline__ void Mutex_Lock_Imp(struct Mutex* mutex)
 
     /* Wait until the mutex is in an unlocked state */
     while (mutex->state == MUTEX_LOCKED) {
-	Mutex_Wait(mutex);
+        Debug("Waiting for mutex\n");
+	    Mutex_Wait(mutex);
     }
 
     /* Now it's ours! */
@@ -88,10 +96,46 @@ static __inline__ void Mutex_Unlock_Imp(struct Mutex* mutex)
      * concurrently add itself to the queue.
      */
     if (!Is_Thread_Queue_Empty(&mutex->waitQueue)) {
-	Disable_Interrupts();
-	Wake_Up_One(&mutex->waitQueue);
-	Enable_Interrupts();
+        Disable_Interrupts();
+        Wake_Up_One(&mutex->waitQueue);
+        Enable_Interrupts();
     }
+}
+
+/**
+ * Returns available id, otherwise return -1
+ */
+static __inline__ int Find_Available_Semaphore(void) {
+    if (s_availableSemaphoresNum == 0) {
+        return -1;
+    }
+
+    int id = 0;
+    for (; id < MAX_SEMAPHORE_NUM; ++id) {
+        if (!g_allSemaphores[id].available) {
+            g_allSemaphores[id].available = true;
+            return id;
+        }
+    }
+    KASSERT(false);
+}
+
+/**
+ * Returns semaphore id when successed, ohterwise -1
+ */
+static __inline__ int Find_Semaphore_By_Name(char *name, uchar_t nameLen) {
+    KASSERT(name != 0 && nameLen != 0);
+
+    for (int i = 0; i < MAX_SEMAPHORE_NUM; ++i) {
+        if (g_allSemaphores[i].available)
+        {
+            if (strncmp(g_allSemaphores[i].name, name, nameLen) == 0) {
+                return i;
+            }
+        }
+    }
+
+    return -1;
 }
 
 /* ----------------------------------------------------------------------
@@ -114,7 +158,6 @@ void Mutex_Init(struct Mutex* mutex)
 void Mutex_Lock(struct Mutex* mutex)
 {
     KASSERT(Interrupts_Enabled());
-
     g_preemptionDisabled = true;
     Mutex_Lock_Imp(mutex);
     g_preemptionDisabled = false;
@@ -203,4 +246,133 @@ void Cond_Broadcast(struct Condition* cond)
     Disable_Interrupts();  /* prevent scheduling */
     Wake_Up(&cond->waitQueue);
     Enable_Interrupts();  /* resume scheduling */
+}
+
+// Code like poem, but like shit more in fact
+
+/**
+ * Returns available id, otherwise, -1 when no available semaphores,
+ * -2 when arguments invalid
+ */
+int Init_Semaphore(char *name, uchar_t nameLen, int resource) {
+
+    int id;
+
+    if (name == 0 || nameLen == 0) {
+        return -2;
+    }
+
+    id = Find_Semaphore_By_Name(name, nameLen);
+    if (id != -1) {
+        ++g_allSemaphores[id].refCount;
+        return id;
+    }
+
+    id = Find_Available_Semaphore();
+    if (id < 0) {
+        return -1;
+    }
+    memcpy(&g_allSemaphores[id].name, name, nameLen);
+    g_allSemaphores[id].name[nameLen] = 0;
+    g_allSemaphores[id].resource = resource;
+    Clear_Thread_Queue(&g_allSemaphores[id].waitQueue);
+    g_allSemaphores[id].refCount = 1;
+    ++s_availableSemaphoresNum;
+
+    return id;
+}
+
+/**
+ * Returns 0 when successed, -1 when no such semaphore
+ */
+int Semaphore_Acquire(uint_t id) {
+    if (id >= MAX_SEMAPHORE_NUM) {
+        return -1;
+    }
+
+    struct Semaphore *target = &g_allSemaphores[id];
+    bool intEnable = Interrupts_Enabled();
+
+    if (!target->available) {
+        return -1;
+    }
+
+    if (intEnable) {
+        Disable_Interrupts();
+    }
+    while (target->resource <= 0) {
+        Wait(&target->waitQueue);
+    }
+    --target->resource;
+    if (intEnable) {
+        Enable_Interrupts();
+    }
+
+    return 0;
+}
+
+/**
+ * Returns 0 when successed, -1 when no such semaphore
+ */
+int Semaphore_Release(uint_t id) {
+    if (id >= MAX_SEMAPHORE_NUM) {
+        return -1;
+    }
+
+    struct Semaphore *target = &g_allSemaphores[id];
+    bool intEnable = Interrupts_Enabled();
+
+    if (!target->available) {
+        return -1;
+    }
+
+    if (intEnable) {
+        Disable_Interrupts();
+    }
+    ++target->resource;
+    if (target->resource > 0) {
+        Wake_Up_One(&target->waitQueue);
+    }
+    if (intEnable) {
+        Enable_Interrupts();
+    }
+
+    return 0;
+}
+
+/**
+ * Destroy a semaphore whose refCount is 0
+ * Returns 0 when successed, otherwise -1
+ */
+int Destroy_Semaphore(uint_t id) {
+    KASSERT(id < MAX_SEMAPHORE_NUM);
+
+    struct Semaphore *target = &g_allSemaphores[id];
+
+    if (target->refCount != 0) {
+        return -1;
+    }
+    
+    if (target->available) {
+        target->available = false;
+        --s_availableSemaphoresNum;
+    }
+
+    return 0;
+}
+
+void Register_Semaphore(uint_t id) {
+    for (int i = 0; i < MAX_SEMAPHORES_REFS; ++i) {
+        if (g_currentThread->semaphores[i] == id) {
+            return;
+        }
+    }
+
+    for (int i = 0; i < MAX_SEMAPHORES_REFS; ++i) {
+        if (g_currentThread->semaphores[i] == REF_TO_NO_SEMAPHORE) {
+            ++g_currentThread->registeredSemaphores;
+            g_currentThread->semaphores[i] = id;
+            break;
+        }
+    }
 }

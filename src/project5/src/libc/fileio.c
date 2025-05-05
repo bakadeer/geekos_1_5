@@ -13,6 +13,9 @@
 #include <fileio.h>
 #include <string.h>
 
+int debugFileio = 1;
+#define Debug(args...) if (debugFileio) Print("Fileio: " args)
+
 DEF_SYSCALL(Stat,SYS_STAT,int, (const char *filename, struct VFS_File_Stat *stat),
     const char *arg0 = filename; size_t arg1 = strlen(filename); struct VFS_File_Stat *arg2 = stat;,
     SYSCALL_REGS_3)
@@ -70,6 +73,7 @@ int Mount(const char *devname, const char *prefix, const char *fstype)
     int num = SYS_MOUNT, rc;
     struct VFS_Mount_Request args;
 
+    Debug("Mount: (%s, %s, %s)\n", devname, prefix, fstype);
     if (!Copy_String(args.devname, devname, sizeof(args.devname)) ||
 	!Copy_String(args.prefix, prefix, sizeof(args.prefix)) ||
 	!Copy_String(args.fstype, fstype, sizeof(args.fstype)))

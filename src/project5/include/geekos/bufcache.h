@@ -59,5 +59,6 @@ int Get_FS_Buffer(struct FS_Buffer_Cache *cache, ulong_t fsBlockNum, struct FS_B
 void Modify_FS_Buffer(struct FS_Buffer_Cache *cache, struct FS_Buffer *buf);
 int Sync_FS_Buffer(struct FS_Buffer_Cache *cache, struct FS_Buffer *buf);
 int Release_FS_Buffer(struct FS_Buffer_Cache *cache, struct FS_Buffer *buf);
+bool Buf_In_Use(struct FS_Buffer *buf);
 
 #endif /* GEEKOS_BUFCACHE_H */

@@ -33,8 +33,11 @@
  */
 static struct Mutex s_vfsLock;
 
-int debugVFS = 0;
+int debugVFS = 1;
 #define Debug(args...) if (debugVFS) Print("VFS: " args)
+
+int myDebugVFS = 1;
+#define MyDebug(args...) if (myDebugVFS) Print("VFS: " args)
 
 struct Filesystem;
 
@@ -196,9 +199,10 @@ static int Do_Open(
     /* Call into actual Open() or Open_Directory() function. */
     rc = openFunc(mountPoint, suffix, mode, pFile);
     if (rc == 0) {
-	/* File opened successfully! */
-	(*pFile)->mode = mode;
-	(*pFile)->mountPoint = mountPoint;
+        /* File opened successfully! */
+        MyDebug("Do_Open: Opened %s\n", path);
+        (*pFile)->mode = mode;
+        (*pFile)->mountPoint = mountPoint;
     }
     return rc;
 }
@@ -313,17 +317,27 @@ int Mount(const char *devname, const char *pathPrefix, const char *fstype)
     struct Mount_Point *mountPoint = 0;
     int rc;
 
+    MyDebug("Mount: Start. devname=%s, pathPrefix=%s, fstype=%s\n", devname, pathPrefix, fstype);
     /* Skip leading slash character(s) */
     while (*pathPrefix == '/')
-	++pathPrefix;
+	{
+        MyDebug("Mount:Skipping leading slash\n");
+        ++pathPrefix;
+    }
 
     if (strlen(pathPrefix) > MAX_PREFIX_LEN)
-	return ENAMETOOLONG;
+	{
+        MyDebug("Mount: pathPrefix too long\n");
+        return ENAMETOOLONG;
+    }
 
     /* Find the named filesystem type */
     fs = Lookup_Filesystem(fstype);
     if (fs == 0)
-	return ENOFILESYS;
+	{
+        MyDebug("Mount: No such filesystem type\n");
+        return ENOFILESYS;
+    }
     KASSERT(fs->ops->Mount != 0); /* All filesystems must implement Mount(). */
 
     /* Attempt to open the block device */
@@ -333,18 +347,21 @@ int Mount(const char *devname, const char *pathPrefix, const char *fstype)
     /* Create Mount_Point structure. */
     mountPoint = (struct Mount_Point*) Malloc(sizeof(*mountPoint));
     if (mountPoint == 0)
-	goto memfail;
+	    goto memfail;
     memset(mountPoint, '\0', sizeof(*mountPoint));
     mountPoint->dev = dev;
     mountPoint->pathPrefix = strdup(pathPrefix);
     if (mountPoint->pathPrefix == 0)
-	goto memfail;
+	    goto memfail;
 
     Debug("Mounting %s on %s using %s fs\n", devname, pathPrefix, fstype);
 
     /* Call the filesystem mount function. */
     if ((rc = fs->ops->Mount(mountPoint)) < 0)
-	goto fail;
+	{
+        MyDebug("Mount: Mount failed\n");
+        goto fail;
+    }
 
     Debug("Mount succeeded!\n");
 
@@ -366,7 +383,7 @@ fail:
     if (mountPoint != 0) {
 	if (mountPoint->pathPrefix != 0)
 	    Free(mountPoint->pathPrefix);
-	Free(mountPoint);
+	    Free(mountPoint);
     }
     if (dev != 0)
 	Close_Block_Device(dev);
@@ -399,12 +416,13 @@ int Open(const char *path, int mode, struct File **pFile)
 int Close(struct File *file)
 {
     int rc;
-
+    MyDebug("About to closing file %p\n", file);
     KASSERT(file->ops->Close != 0); /* All filesystems must implement Close(). */
 
     rc = file->ops->Close(file);
     if (rc == 0)
 	Free(file);
+    MyDebug("Closed file %p\n", file);
     return rc;
 }
 
@@ -432,9 +450,9 @@ int Stat(const char *path, struct VFS_File_Stat *stat)
 
     Debug("Stat: found mount point, dispatching to filesystem\n");
     if (mountPoint->ops->Stat == 0)
-	return EUNSUPPORTED;
+        return EUNSUPPORTED;
     else
-	return mountPoint->ops->Stat(mountPoint, suffix, stat);
+        return mountPoint->ops->Stat(mountPoint, suffix, stat);
 }
 
 /*
@@ -479,12 +497,12 @@ struct File *Allocate_File(struct File_Ops *ops, int filePos, int endPos, void *
 
     file = (struct File *) Malloc(sizeof(struct File));
     if (file != 0) {
-	file->ops = ops;
-	file->filePos = filePos;
-	file->endPos = endPos;
-	file->fsData = fsData;
-	file->mode = mode;
-	file->mountPoint = mountPoint;
+        file->ops = ops;
+        file->filePos = filePos;
+        file->endPos = endPos;
+        file->fsData = fsData;
+        file->mode = mode;
+        file->mountPoint = mountPoint;
     }
     return file;
 }
@@ -516,9 +534,9 @@ int FStat(struct File *file, struct VFS_File_Stat *stat)
 int Read(struct File *file, void *buf, ulong_t len)
 {
     if (file->ops->Read == 0)
-	return EUNSUPPORTED;
+        return EUNSUPPORTED;
     else
-	return file->ops->Read(file, buf, len);
+        return file->ops->Read(file, buf, len);
 }
 
 /*
@@ -648,17 +666,28 @@ int Delete(const char *path)
 
     /* Split path into prefix and suffix */
     if (!Unpack_Path(path, prefix, &suffix))
-	return ENOTFOUND;
-
+	    {    
+            MyDebug("Delete: No path found for path %s\n", path);
+            return ENOTFOUND;
+        }
     /* Get mount point for path */
     mountPoint = Lookup_Mount_Point(prefix);
     if (mountPoint == 0)
-	return ENOTFOUND;
+	    {
+            MyDebug("Delete: No mount point found for path %s\n", path);
+            return ENOTFOUND;
+        }
 
     if (mountPoint->ops->Delete == 0)
-	return EUNSUPPORTED;
+	    {
+            MyDebug("Delete: No delete function found for path %s\n", path);
+            return EUNSUPPORTED;
+        }
     else
-	return mountPoint->ops->Delete(mountPoint, suffix);
+	    {
+            MyDebug("Delete: Calling delete function for path %s\n", path);
+            return mountPoint->ops->Delete(mountPoint, suffix);
+        }
 }
 
 /*

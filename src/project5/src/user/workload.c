@@ -66,6 +66,7 @@ int main(int argc , char ** argv)
 
   start = Get_Time_Of_Day();
   scr_sem = Create_Semaphore ("screen" , 1)  ;
+//   Print("From workload: screen: %d\n", scr_sem);
 
   P (scr_sem) ;
   Print ("************* Start Workload Generator *********\n");

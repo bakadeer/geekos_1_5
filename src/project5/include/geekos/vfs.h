@@ -114,6 +114,7 @@ int Open(const char *path, int mode, struct File **pFile);
 int Close(struct File *file);
 int Stat(const char *path, struct VFS_File_Stat *stat);
 int Sync(void);
+int Delete(const char *path);
 
 /* File operations. */
 struct File *Allocate_File(struct File_Ops *ops, int filePos, int endPos, void *fsData,
@@ -121,6 +122,7 @@ struct File *Allocate_File(struct File_Ops *ops, int filePos, int endPos, void *
 int FStat(struct File *file, struct VFS_File_Stat *stat);
 int Read(struct File *file, void *buf, ulong_t len);
 int Write(struct File *file, void *buf, ulong_t len);
+int Seek(struct File *file, ulong_t len);
 int Read_Fully(const char *path, void **pBuffer, ulong_t *pLen);
 
 /* Directory operations. */

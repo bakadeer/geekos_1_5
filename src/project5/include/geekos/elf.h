@@ -21,7 +21,7 @@ typedef struct {
     unsigned  int	version;
     unsigned  int	entry;
     unsigned  int	phoff;
-    unsigned  int	sphoff;
+    unsigned  int	shoff; // FIX NAMING: sphoff -> shoff
     unsigned  int	flags;
     unsigned  short	ehsize;
     unsigned  short	phentsize;

@@ -56,46 +56,46 @@ int main(int argc, char **argv)
     Print("\x1B[37m");
 
     while (true) {
-	/* Print shell prompt (bright cyan on black background) */
-	Print("\x1B[1;36m$\x1B[37m ");
+		/* Print shell prompt (bright cyan on black background) */
+		Print("\x1B[1;36m$\x1B[37m ");
 
-	/* Read a line of input */
-	Read_Line(commandBuf, sizeof(commandBuf));
-	command = Strip_Leading_Whitespace(commandBuf);
-	Trim_Newline(command);
+		/* Read a line of input */
+		Read_Line(commandBuf, sizeof(commandBuf));
+		command = Strip_Leading_Whitespace(commandBuf);
+		Trim_Newline(command);
 
-	/*
-	 * Handle some special commands
-	 */
-	if (strcmp(command, "exit") == 0) {
-	    /* Exit the shell */
-	    break;
-	} else if (strcmp(command, "pid") == 0) {
-	    /* Print the pid of this process */
-	    Print("%d\n", Get_PID());
-	    continue;
-	} else if (strcmp(command, "exitCodes") == 0) {
-	    /* Print exit codes of spawned processes. */
-	    exitCodes = 1;
-	    continue;
-	} else if (strncmp(command, "path=", 5) == 0) {
-	    /* Set the executable search path */
-	    strcpy(path, command + 5);
-	    continue;
-	} else if (strcmp(command, "") == 0) {
-	    /* Blank line. */
-	    continue;
-	}
+		/*
+		* Handle some special commands
+		*/
+		if (strcmp(command, "exit") == 0) {
+			/* Exit the shell */
+			break;
+		} else if (strcmp(command, "pid") == 0) {
+			/* Print the pid of this process */
+			Print("%d\n", Get_PID());
+			continue;
+		} else if (strcmp(command, "exitCodes") == 0) {
+			/* Print exit codes of spawned processes. */
+			exitCodes = 1;
+			continue;
+		} else if (strncmp(command, "path=", 5) == 0) {
+			/* Set the executable search path */
+			strcpy(path, command + 5);
+			continue;
+		} else if (strcmp(command, "") == 0) {
+			/* Blank line. */
+			continue;
+		}
 
-	/*
-	 * Parse the command string and build array of
-	 * Process structs representing a pipeline of commands.
-	 */
-	nproc = Build_Pipeline(command, procList);
-	if (nproc <= 0)
-	    continue;
+		/*
+		* Parse the command string and build array of
+		* Process structs representing a pipeline of commands.
+		*/
+		nproc = Build_Pipeline(command, procList);
+		if (nproc <= 0)
+			continue;
 
-	Spawn_Single_Command(procList, nproc, path);
+		Spawn_Single_Command(procList, nproc, path);
     }
 
     Print_String("DONE!\n");
@@ -170,19 +170,19 @@ int Build_Pipeline(char *command, struct Process procList[])
 
         /* Input redirection from file? */
         if (s != 0 && *s == '<') {
-	    proc->flags |= INFILE;
-	    *s = '\0';
-	    p = s+1;
-	    s = Copy_Token(proc->infile, p);
-	    if (s == 0) {
-	        Print("Error: invalid input redirection\n");
-	        return -1;
-	    }
-	    p = s;
+			proc->flags |= INFILE;
+			*s = '\0';
+			p = s+1;
+			s = Copy_Token(proc->infile, p);
+			if (s == 0) {
+				Print("Error: invalid input redirection\n");
+				return -1;
+			}
+			p = s;
 
-	    /* Output redirection still allowed for this command. */
-	    p = Strip_Leading_Whitespace(p);
-	    s = (*p == '>' || *p == '|') ? p : 0;
+			/* Output redirection still allowed for this command. */
+			p = Strip_Leading_Whitespace(p);
+			s = (*p == '>' || *p == '|') ? p : 0;
         }
 
         /* Output redirection to file or pipe? */

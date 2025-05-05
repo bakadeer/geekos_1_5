@@ -15,6 +15,7 @@ int main(int argc , char ** argv)
   scr_sem = Create_Semaphore ("screen" , 1) ;   /* register for screen use */
   ping = Create_Semaphore ("ping" , 1) ;   
   pong = Create_Semaphore ("pong" , 0) ;  
+  // Print("From ping: ping: %d, pong: %d\n", ping, pong);
 
   for (i=0; i < 5; i++) {
        P(pong);

@@ -10,6 +10,7 @@ int main(int argc, char **argv)
 
   start = Get_Time_Of_Day();
   scr_sem = Create_Semaphore ("screen" , 1) ;   /* register for screen use */
+  // Print("From long: screen: %d\n", scr_sem);
 
   for (i=0; i < 200; i++) {
       for (j=0 ; j < 10000 ; j++) ;

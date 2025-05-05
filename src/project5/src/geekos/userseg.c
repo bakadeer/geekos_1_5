@@ -20,6 +20,7 @@
 #include <geekos/kthread.h>
 #include <geekos/argblock.h>
 #include <geekos/user.h>
+#include <geekos/errno.h>
 
 /* ----------------------------------------------------------------------
  * Variables
@@ -36,10 +37,24 @@
 /*
  * Create a new user context of given size
  */
-
-/* TODO: Implement
 static struct User_Context* Create_User_Context(ulong_t size)
-*/
+{
+    struct User_Context *context = (struct User_Context*) Malloc(sizeof(struct User_Context));
+    if (!context) {
+        return NULL;
+    }
+
+    context->memory = (char*) Malloc(size);
+    if (!context->memory) {
+        Destroy_User_Context(context);
+        return NULL;
+    }
+    context->size = size;
+    context->refCount = 0;
+
+    return context;
+}
+
 
 
 static bool Validate_User_Memory(struct User_Context* userContext,
@@ -73,7 +88,19 @@ void Destroy_User_Context(struct User_Context* userContext)
      * - don't forget to free the segment descriptor allocated
      *   for the process's LDT
      */
-    TODO("Destroy a User_Context");
+    // TODO("Destroy a User_Context");
+
+    if (!userContext) {
+        return;
+    }
+
+    if (userContext->ldtDescriptor) {
+        Free_Segment_Descriptor(userContext->ldtDescriptor);
+    }
+    if (userContext->memory) {
+        Free(userContext->memory);
+    }
+    Free(userContext);
 }
 
 /*
@@ -109,7 +136,78 @@ int Load_User_Program(char *exeFileData, ulong_t exeFileLength,
      *   address, argument block address, and initial kernel stack pointer
      *   address
      */
-    TODO("Load a user executable into a user memory space using segmentation");
+    // TODO("Load a user executable into a user memory space using segmentation");
+
+    // Who was driven crazy by addressing of x86?
+    // Oh, that was me!
+
+    ulong_t addressTop = 0;
+
+    ulong_t argBlockSize, argBlockAddr;
+    unsigned numArgs;
+
+    if (exeFileData == 0 || exeFormat == 0) {
+        return EINVALID;
+    }
+
+    for (int i = 0; i < exeFormat->numSegments; ++i) {
+        struct Exe_Segment *segment = &exeFormat->segmentList[i];
+        ulong_t segmentAddressTop = segment->startAddress + segment->sizeInMemory;
+
+        if (segmentAddressTop > addressTop) {
+            addressTop = segmentAddressTop;
+        }
+    }
+    if (addressTop == 0) {
+        return ENOEXEC;
+    }
+    Get_Argument_Block_Size(command, &numArgs, &argBlockSize);
+    argBlockAddr = addressTop;
+    addressTop += argBlockSize;
+    addressTop = Round_Up_To_Page(addressTop) + DEFAULT_USER_STACK_SIZE;
+    *pUserContext = Create_User_Context(addressTop);
+    if (!*pUserContext) {
+        return ENOMEM;
+    }
+
+    for (int i = 0; i < exeFormat->numSegments; ++i) {
+        struct Exe_Segment *segment = &exeFormat->segmentList[i];
+        memcpy(
+            (*pUserContext)->memory + segment->startAddress,
+            exeFileData + segment->offsetInFile,
+            segment->lengthInFile
+        );
+    }
+    Format_Argument_Block(
+        (*pUserContext)->memory + argBlockAddr,
+        numArgs, argBlockAddr, command
+    );
+
+    (*pUserContext)->ldtDescriptor = Allocate_Segment_Descriptor();
+    if (!(*pUserContext)->ldtDescriptor) {
+        return EUNSPECIFIED;
+    }
+    Init_LDT_Descriptor((*pUserContext)->ldtDescriptor, (*pUserContext)->ldt, NUM_USER_LDT_ENTRIES);
+    (*pUserContext)->ldtSelector = Selector(
+        USER_PRIVILEGE, true, Get_Descriptor_Index((*pUserContext)->ldtDescriptor)
+    );
+
+    // Protected flat mode
+    Init_Code_Segment_Descriptor(
+        &(*pUserContext)->ldt[0], (ulong_t) (*pUserContext)->memory, addressTop >> PAGE_POWER, USER_PRIVILEGE
+    );
+    (*pUserContext)->csSelector = Selector(USER_PRIVILEGE, false, 0);
+    Init_Data_Segment_Descriptor(
+        &(*pUserContext)->ldt[1], (ulong_t) (*pUserContext)->memory, addressTop >> PAGE_POWER, USER_PRIVILEGE
+    );
+    (*pUserContext)->dsSelector = Selector(USER_PRIVILEGE, false, 1);
+
+    (*pUserContext)->entryAddr = exeFormat->entryAddr;
+    (*pUserContext)->argBlockAddr = argBlockAddr;
+    (*pUserContext)->stackPointerAddr = addressTop;
+
+    return 0;
+    // What's' `exeFileLength` for?
 }
 
 /*
@@ -135,8 +233,20 @@ bool Copy_From_User(void* destInKernel, ulong_t srcInUser, ulong_t bufSize)
      * - make sure the user buffer lies entirely in memory belonging
      *   to the process
      */
-    TODO("Copy memory from user buffer to kernel buffer");
-    Validate_User_Memory(NULL,0,0); /* delete this; keeps gcc happy */
+    // TODO("Copy memory from user buffer to kernel buffer");
+    
+    struct User_Context *context = g_currentThread->userContext;
+
+    if (destInKernel == 0) {
+        return false;
+    }
+    if (!Validate_User_Memory(context, srcInUser, bufSize)) {
+        return false;
+    }
+
+    memcpy(destInKernel, context->memory + srcInUser, bufSize);
+
+    return true;
 }
 
 /*
@@ -156,7 +266,20 @@ bool Copy_To_User(ulong_t destInUser, void* srcInKernel, ulong_t bufSize)
     /*
      * Hints: same as for Copy_From_User()
      */
-    TODO("Copy memory from kernel buffer to user buffer");
+    // TODO("Copy memory from kernel buffer to user buffer");
+
+    struct User_Context *context = g_currentThread->userContext;
+
+    if (srcInKernel == 0) {
+        return false;
+    }
+    if (!Validate_User_Memory(context, destInUser, bufSize)) {
+        return false;
+    }
+
+    memcpy(context->memory + destInUser, srcInKernel, bufSize);
+
+    return true;
 }
 
 /*
@@ -171,6 +294,12 @@ void Switch_To_Address_Space(struct User_Context *userContext)
      * Hint: you will need to use the lldt assembly language instruction
      * to load the process's LDT by specifying its LDT selector.
      */
-    TODO("Switch to user address space using segmentation/LDT");
+    // TODO("Switch to user address space using segmentation/LDT");
+
+    extern void Load_LDTR(ushort_t selector);
+
+    KASSERT(userContext != 0);
+    
+    Load_LDTR(userContext->ldtSelector);
 }
 

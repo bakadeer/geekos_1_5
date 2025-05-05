@@ -40,6 +40,12 @@ static void Print_Selector(const char* regName, uint_t value)
 	regName, value >> 3, (value >> 2) & 1, value & 3);
 }
 
+
+// See https://f.osdev.org/viewtopic.php?t=36944 and https://wiki.osdev.org/8259_PIC#Spurious_IRQs
+static void Seventh_Suprious_IRQ_Handler(struct Interrupt_State* state) {
+    
+}
+
 /* ----------------------------------------------------------------------
  * Public functions
  * ---------------------------------------------------------------------- */
@@ -59,8 +65,11 @@ void Init_Interrupts(void)
      * This will ensure that we always have a handler function to call.
      */
     for (i = 0; i < NUM_IDT_ENTRIES; ++i) {
-	Install_Interrupt_Handler(i, Dummy_Interrupt_Handler);
+        Install_Interrupt_Handler(i, Dummy_Interrupt_Handler);
     }
+
+    // Ignore interrupt 0x27 due to bochs's behavior
+    Install_Interrupt_Handler(0x27, Seventh_Suprious_IRQ_Handler);
 
     /* Re-enable interrupts */
     Enable_Interrupts();
@@ -94,8 +103,8 @@ void Dump_Interrupt_State(struct Interrupt_State* state)
 	errorCode >> 3, (errorCode >> 2) & 1, (errorCode >> 1) & 1, errorCode & 1
     );
     if (Is_User_Interrupt(state)) {
-	struct User_Interrupt_State *ustate = (struct User_Interrupt_State*) state;
-	Print("user esp=%08x, user ss=%08x\n", ustate->espUser, ustate->ssUser);
+        struct User_Interrupt_State *ustate = (struct User_Interrupt_State*) state;
+        Print("user esp=%08x, user ss=%08x\n", ustate->espUser, ustate->ssUser);
     }
     if (state->intNum == 14) {
 	/* Page fault */

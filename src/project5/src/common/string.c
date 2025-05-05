@@ -134,6 +134,8 @@ char *strcpy(char *dest, const char *src)
     return ret;
 }
 
+
+// 从 src 读取limit 个字符，并复制到 dest 中, src 以 \0 结束
 char *strncpy(char *dest, const char *src, size_t limit)
 {
     char *ret = dest;
@@ -171,6 +173,7 @@ int atoi(const char *buf)
     return ret;
 }
 
+// 在字符串 s 中查找字符 c 第一次出现的位置。
 char *strchr(const char *s, int c)
 {
     while (*s != '\0') {
@@ -181,6 +184,7 @@ char *strchr(const char *s, int c)
     return 0;
 }
 
+// 在字符串 s 中从后往前查找字符 c 第一次出现的位置。
 char *strrchr(const char *s, int c)
 {
     size_t len = strlen(s);

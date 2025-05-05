@@ -50,8 +50,8 @@
  * - The flags indicate the shift/alt/control state,
  *   and whether the event was a make or release.
  */
-
 typedef ushort_t Keycode;
+#define ASCII_AREA 0xFF
 
 /*
  * Flags

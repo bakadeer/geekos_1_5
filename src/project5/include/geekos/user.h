@@ -72,9 +72,9 @@ struct User_Context {
      */
     int refCount;
 
-#if 0
-    int *semaphores;
-#endif
+    // File operation support
+    struct File *fdTable[USER_MAX_FILES];
+    int numOpenedFiles;
 };
 
 struct Kernel_Thread;
@@ -101,5 +101,9 @@ bool Copy_From_User(void* destInKernel, ulong_t srcInUser, ulong_t bufSize);
 bool Copy_To_User(ulong_t destInUser, void* srcInKernel, ulong_t bufSize);
 void Switch_To_Address_Space(struct User_Context *userContext);
 
+#define USER_BASE_VADDR 0x80000000
+#define USER_SEG_LIMIT 0x80000000
+#define VA_END 0xFFFFFFFF
+#define STACK_BOTTOM 0xFFFFE000
 
 #endif  /* GEEKOS_USER_H */

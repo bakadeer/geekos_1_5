@@ -50,11 +50,11 @@ static int Do_Buffer_IO(struct FS_Buffer_Cache *cache, struct FS_Buffer *buf,
     char *ptr = (char*) buf->data;
 
     for (offset = 0; offset < cache->fsBlockSize; offset += SECTOR_SIZE) {
-	int rc = IO_Func(cache->dev, blockNum, ptr + offset);
-	if (rc != 0)
-	    return rc;
-	++sectorCount;
-	++blockNum;
+        int rc = IO_Func(cache->dev, blockNum, ptr + offset);
+        if (rc != 0)
+            return rc;
+        ++sectorCount;
+        ++blockNum;
     }
     KASSERT(offset == cache->fsBlockSize);
     KASSERT(sectorCount == Get_Num_Sectors_Per_FS_Block(cache));
@@ -72,8 +72,8 @@ static int Sync_Buffer(struct FS_Buffer_Cache *cache, struct FS_Buffer *buf)
     KASSERT(IS_HELD(&cache->lock));
 
     if (buf->flags & FS_BUFFER_DIRTY) {
-	if ((rc = Do_Buffer_IO(cache, buf, Block_Write)) == 0)
-	    buf->flags &= ~(FS_BUFFER_DIRTY);
+        if ((rc = Do_Buffer_IO(cache, buf, Block_Write)) == 0)
+            buf->flags &= ~(FS_BUFFER_DIRTY);
     }
 
     return rc;
@@ -93,11 +93,7 @@ static void Move_To_Front(struct FS_Buffer_Cache *cache, struct FS_Buffer *buf)
  * Get buffer for given block, and mark it in use.
  * Must be called with cache mutex held.
  */
-static int Get_Buffer(
-    struct FS_Buffer_Cache *cache, 
-    ulong_t fsBlockNum, 
-    struct FS_Buffer **pBuf
-)
+static int Get_Buffer(struct FS_Buffer_Cache *cache, ulong_t fsBlockNum, struct FS_Buffer **pBuf)
 {
     struct FS_Buffer *buf, *lru = 0;
     int rc;
@@ -113,20 +109,20 @@ static int Get_Buffer(
      */
     buf = Get_Front_Of_FS_Buffer_List(&cache->bufferList);
     while (buf != 0) {
-	if (buf->fsBlockNum == fsBlockNum) {
-	    /* If buffer is in use, wait until it is available. */
-	    while (buf->flags & FS_BUFFER_INUSE) {
-		Debug("Waiting for block %lu\n", fsBlockNum);
-		Cond_Wait(&cache->cond, &cache->lock);
-	    }
-	    goto done;
-	}
+        if (buf->fsBlockNum == fsBlockNum) {
+            /* If buffer is in use, wait until it is available. */
+            while (buf->flags & FS_BUFFER_INUSE) {
+                Debug("Waiting for block %lu\n", fsBlockNum);
+                Cond_Wait(&cache->cond, &cache->lock);
+            }
+            goto done;
+        }
 
-	/* If buffer isn't in use, it's a candidate for LRU. */
-	if (!(buf->flags & FS_BUFFER_INUSE))
-	    lru = buf;
+        /* If buffer isn't in use, it's a candidate for LRU. */
+        if (!(buf->flags & FS_BUFFER_INUSE))
+            lru = buf;
 
-	buf = Get_Next_In_FS_Buffer_List(buf);
+        buf = Get_Next_In_FS_Buffer_List(buf);
     }
 
     /*
@@ -134,20 +130,20 @@ static int Get_Buffer(
      * limit, allocate a new one.
      */
     if (cache->numCached < FS_BUFFER_CACHE_MAX_BLOCKS) {
-	buf = (struct FS_Buffer*) Malloc(sizeof(*buf));
-	if (buf != 0) {
-	    buf->data = Alloc_Page();
-	    if (buf->data == 0)
-		Free(buf);
-	    else {
-		/* Successful creation */
-		buf->fsBlockNum = fsBlockNum;
-		buf->flags = 0;
-		Add_To_Front_Of_FS_Buffer_List(&cache->bufferList, buf);
-		++cache->numCached;
-		goto readAndAcquire;
-	    }
-	}
+        buf = (struct FS_Buffer*) Malloc(sizeof(*buf));
+        if (buf != 0) {
+            buf->data = Alloc_Page();
+            if (buf->data == 0)
+                Free(buf);
+            else {
+                /* Successful creation */
+                buf->fsBlockNum = fsBlockNum;
+                buf->flags = 0;
+                Add_To_Front_Of_FS_Buffer_List(&cache->bufferList, buf);
+                ++cache->numCached;
+                goto readAndAcquire;
+            }
+        }
     }
     
     /*
@@ -203,9 +199,9 @@ static int Sync_Cache(struct FS_Buffer_Cache *cache)
 
     buf = Get_Front_Of_FS_Buffer_List(&cache->bufferList);
     while (buf != 0) {
-	if ((rc = Sync_Buffer(cache, buf)) != 0)
-	    break;
-	buf = Get_Next_In_FS_Buffer_List(buf);
+        if ((rc = Sync_Buffer(cache, buf)) != 0)
+            break;
+        buf = Get_Next_In_FS_Buffer_List(buf);
     }
 
     return rc;
@@ -228,10 +224,7 @@ static void Free_Buffer(struct FS_Buffer *buf)
 /*
  * Create a cache of filesystem buffers.
  */
-struct FS_Buffer_Cache *Create_FS_Buffer_Cache(
-    struct Block_Device *dev, 
-    uint_t fsBlockSize
-)
+struct FS_Buffer_Cache *Create_FS_Buffer_Cache(struct Block_Device *dev, uint_t fsBlockSize)
 {
     struct FS_Buffer_Cache *cache;
 
@@ -291,9 +284,9 @@ int Destroy_FS_Buffer_Cache(struct FS_Buffer_Cache *cache)
     /* Free all of the buffers. */
     buf = Get_Front_Of_FS_Buffer_List(&cache->bufferList);
     while (buf != 0) {
-	struct FS_Buffer *next = Get_Next_In_FS_Buffer_List(buf);
-	Free_Buffer(buf);
-	buf = next;
+        struct FS_Buffer *next = Get_Next_In_FS_Buffer_List(buf);
+        Free_Buffer(buf);
+        buf = next;
     }
     Clear_FS_Buffer_List(&cache->bufferList);
 
@@ -366,13 +359,17 @@ int Release_FS_Buffer(struct FS_Buffer_Cache *cache, struct FS_Buffer *buf)
      * thread waiting to use it.
      */
     if (rc == 0) {
-	buf->flags &= ~(FS_BUFFER_INUSE);
-	Cond_Broadcast(&cache->cond);
+        buf->flags &= ~(FS_BUFFER_INUSE);
+        Cond_Broadcast(&cache->cond);
     }
     Debug("Released block %lu\n", buf->fsBlockNum);
 
     Mutex_Unlock(&cache->lock);
 
     return rc;
+}
+
+bool Buf_In_Use(struct FS_Buffer *buf) {
+    return buf != 0 && buf->flags & FS_BUFFER_INUSE;
 }
 

@@ -16,7 +16,8 @@
 #include <geekos/string.h>
 #include <geekos/kthread.h>
 #include <geekos/malloc.h>
-
+#include <geekos/user.h>
+#include <geekos/synch.h>
 
 /* ----------------------------------------------------------------------
  * Private data
@@ -67,6 +68,8 @@ static struct Thread_Queue s_reaperWaitQueue;
 static unsigned int s_tlocalKeyCounter = 0;
 static tlocal_destructor_t s_tlocalDestructors[MAX_TLOCAL_KEYS];
 
+volatile int g_schedulingPolicy = DEFAULT_SCHEDULING_POLICY;
+
 /* ----------------------------------------------------------------------
  * Private functions
  * ---------------------------------------------------------------------- */
@@ -102,6 +105,11 @@ static void Init_Thread(struct Kernel_Thread* kthread, void* stackPage,
 
     kthread->currentReadyQueue = 0;
     kthread->blocked = false;
+
+    kthread->registeredSemaphores = 0;
+    for (int i = 0; i < MAX_SEMAPHORES_REFS; ++i) {
+        *((int*) (kthread->semaphores + i)) = REF_TO_NO_SEMAPHORE;
+    }
 }
 
 /*
@@ -123,10 +131,10 @@ static struct Kernel_Thread* Create_Thread(int priority, bool detached)
 
     /* Make sure that the memory allocations succeeded. */
     if (kthread == 0)
-	return 0;
+        return 0;
     if (stackPage == 0) {
-	Free_Page(kthread);
-	return 0;
+        Free_Page(kthread);
+        return 0;
     }
 
     /*Print("New thread @ %x, stack @ %x\n", kthread, stackPage); */
@@ -196,7 +204,7 @@ static void Detach_Thread(struct Kernel_Thread* kthread)
 
     --kthread->refCount;
     if (kthread->refCount == 0) {
-	Reap_Thread(kthread);
+        Reap_Thread(kthread);
     }
 }
 
@@ -315,7 +323,33 @@ static void Setup_Kernel_Thread(
      * - The esi register should contain the address of
      *   the argument block
      */
-    TODO("Create a new thread to execute in user mode");
+    // TODO("Create a new thread to execute in user mode");
+
+    KASSERT(kthread != 0);
+
+    Attach_User_Context(kthread, userContext);
+
+    Push(kthread, userContext->dsSelector);
+    Push(kthread, userContext->stackPointerAddr);
+    Push(kthread, EFLAGS_IF);
+    Push(kthread, userContext->csSelector);
+    Push(kthread, userContext->entryAddr);
+
+    Push(kthread, 0);
+    Push(kthread, 0);
+    
+    Push(kthread, 0);
+    Push(kthread, 0);
+    Push(kthread, 0);
+    Push(kthread, 0);
+    Push(kthread, userContext->argBlockAddr);
+    Push(kthread, 0);
+    Push(kthread, 0);
+
+    Push(kthread, userContext->dsSelector);
+    Push(kthread, userContext->dsSelector);
+    Push(kthread, userContext->dsSelector);
+    Push(kthread, userContext->dsSelector);
 }
 
 
@@ -342,38 +376,38 @@ static void Reaper(ulong_t arg)
 
     while (true) {
 	/* See if there are any threads needing disposal. */
-	if ((kthread = s_graveyardQueue.head) == 0) {
-	    /* Graveyard is empty, so wait for a thread to die. */
-	    Wait(&s_reaperWaitQueue);
-	}
-	else {
-	    /* Make the graveyard queue empty. */
-	    Clear_Thread_Queue(&s_graveyardQueue);
+        if ((kthread = s_graveyardQueue.head) == 0) {
+            /* Graveyard is empty, so wait for a thread to die. */
+            Wait(&s_reaperWaitQueue);
+        }
+        else {
+            /* Make the graveyard queue empty. */
+            Clear_Thread_Queue(&s_graveyardQueue);
 
-	    /*
-	     * Now we can re-enable interrupts, since we
-	     * have removed all the threads needing disposal.
-	     */
-	    Enable_Interrupts();
-	    Yield();   /* allow other threads to run? */
+            /*
+            * Now we can re-enable interrupts, since we
+            * have removed all the threads needing disposal.
+            */
+            Enable_Interrupts();
+            Yield();   /* allow other threads to run? */
 
-	    /* Dispose of the dead threads. */
-	    while (kthread != 0) {
-		struct Kernel_Thread* next = Get_Next_In_Thread_Queue(kthread);
+            /* Dispose of the dead threads. */
+            while (kthread != 0) {
+            struct Kernel_Thread* next = Get_Next_In_Thread_Queue(kthread);
 #if 0
-		Print("Reaper: disposing of thread @ %x, stack @ %x\n",
-		    kthread, kthread->stackPage);
+            Print("Reaper: disposing of thread @ %x, stack @ %x\n",
+                kthread, kthread->stackPage);
 #endif
-		Destroy_Thread(kthread);
-		kthread = next;
-	    }
+            Destroy_Thread(kthread);
+            kthread = next;
+            }
 
-	    /*
-	     * Disable interrupts again, since we're going to
-	     * do another iteration.
-	     */
-	    Disable_Interrupts();
-	}
+            /*
+            * Disable interrupts again, since we're going to
+            * do another iteration.
+            */
+            Disable_Interrupts();
+        }
     }
 }
 
@@ -386,9 +420,9 @@ static __inline__ struct Kernel_Thread* Find_Best(struct Thread_Queue* queue)
     /* Pick the highest priority thread */
     struct Kernel_Thread *kthread = queue->head, *best = 0;
     while (kthread != 0) {
-	if (best == 0 || kthread->priority > best->priority)
-	    best = kthread;
-	kthread = Get_Next_In_Thread_Queue(kthread);
+        if (best == 0 || kthread->priority > best->priority)
+            best = kthread;
+        kthread = Get_Next_In_Thread_Queue(kthread);
     }
     return best;
 }
@@ -423,18 +457,18 @@ static void Tlocal_Exit(struct Kernel_Thread* curr) {
 
         for (i = 0; i<MAX_TLOCAL_KEYS; i++) {
 
-	    void *x = (void *)curr->tlocalData[i];
-	    if (x != NULL && s_tlocalDestructors[i] != NULL) {
+            void *x = (void *)curr->tlocalData[i];
+            if (x != NULL && s_tlocalDestructors[i] != NULL) {
 
-	        curr->tlocalData[i] = NULL;
-		called = 1;
+                curr->tlocalData[i] = NULL;
+                called = 1;
 
-		Enable_Interrupts();
-		s_tlocalDestructors[i](x);
-		Disable_Interrupts();
-	    }
-	}
-	if (!called) break;
+                Enable_Interrupts();
+                s_tlocalDestructors[i](x);
+                Disable_Interrupts();
+            }
+        }
+        if (!called) break;
     }
 }
 
@@ -488,15 +522,15 @@ struct Kernel_Thread* Start_Kernel_Thread(
 {
     struct Kernel_Thread* kthread = Create_Thread(priority, detached);
     if (kthread != 0) {
-	/*
-	 * Create the initial context for the thread to make
-	 * it schedulable.
-	 */
-	Setup_Kernel_Thread(kthread, startFunc, arg);
+        /*
+        * Create the initial context for the thread to make
+        * it schedulable.
+        */
+        Setup_Kernel_Thread(kthread, startFunc, arg);
 
 
-	/* Atomically put the thread on the run queue. */
-	Make_Runnable_Atomic(kthread);
+        /* Atomically put the thread on the run queue. */
+        Make_Runnable_Atomic(kthread);
     }
 
     return kthread;
@@ -517,7 +551,19 @@ Start_User_Thread(struct User_Context* userContext, bool detached)
      * - Call Make_Runnable_Atomic() to schedule the process
      *   for execution
      */
-    TODO("Start user thread");
+    // TODO("Start user thread");
+
+    struct Kernel_Thread *kthread;
+
+    KASSERT(userContext != 0);
+
+    if (!(kthread = Create_Thread(PRIORITY_USER, detached))) {
+        return NULL;
+    }
+    Setup_User_Thread(kthread, userContext);
+    Make_Runnable_Atomic(kthread);
+
+    return kthread;
 }
 
 /*
@@ -528,10 +574,11 @@ void Make_Runnable(struct Kernel_Thread* kthread)
 {
     KASSERT(!Interrupts_Enabled());
 
-    { int currentQ = kthread->currentReadyQueue;
-      KASSERT(currentQ >= 0 && currentQ < MAX_QUEUE_LEVEL);
-      kthread->blocked = false;
-      Enqueue_Thread(&s_runQueue[currentQ], kthread);
+    {
+        int currentQ = kthread->currentReadyQueue;
+        KASSERT(currentQ >= 0 && currentQ < MAX_QUEUE_LEVEL);
+        kthread->blocked = false;
+        Enqueue_Thread(&s_runQueue[currentQ], kthread);
     }
 }
 
@@ -563,12 +610,74 @@ struct Kernel_Thread* Get_Next_Runnable(void)
     struct Kernel_Thread* best = 0;
 
     /* Find the best thread from the highest-priority run queue */
-    TODO("Find a runnable thread from run queues");
+    // TODO("Find a runnable thread from run queues");
 
-/*
- *    Print("Scheduling %x\n", best);
- */
+    int level = 0;
+
+    for (; level < MAX_QUEUE_LEVEL; ++level) {
+        best = Find_Best(&s_runQueue[level]);
+        // I forgot it, and caused a bug! How insane!
+        if (best == 0) {
+            continue;
+        }
+
+        while (best->blocked && g_schedulingPolicy == SCHEDULING_MLFQ) {
+            // The idle thread won't be moved upwards since
+            // it won't be blocked. But let's make sure it
+            if (best->currentReadyQueue > 0 && best->priority != PRIORITY_IDLE) {
+                struct Kernel_Thread *blocked = best;
+                --blocked->currentReadyQueue;
+                Remove_Thread(&s_runQueue[level], blocked);
+                Enqueue_Thread(&s_runQueue[level - 1], blocked);
+                
+                best = Find_Best(&s_runQueue[level]);
+            }
+        }
+
+        if (best) {
+            break;
+        }
+    }
+    KASSERT(best != 0);
+    Remove_Thread(&s_runQueue[level], best);
+
+    // Print("Scheduling %x\n", best);
+
     return best;
+}
+
+/**
+ * Transport all threads to privilege queue 0
+ * except the idle thread staying 3
+ */
+void Move_Threads_To_0_Except_Idle(void) {
+    static struct Kernel_Thread *s_idleThread = 0;
+    struct Kernel_Thread *kthread = 0;
+
+    for (int i = 1; i < MAX_QUEUE_LEVEL; ++i) {
+        Append_Thread_Queue(&s_runQueue[0], &s_runQueue[i]);
+    }
+
+    if (s_idleThread == 0) {
+        struct Kernel_Thread *kthread = Get_Front_Of_All_Thread_List(&s_allThreadList);
+        while (kthread != 0) {
+            if (kthread->priority == PRIORITY_IDLE) {
+                s_idleThread = kthread;
+                break;
+            }
+            kthread = Get_Next_In_All_Thread_List(kthread);
+        }
+    }
+    KASSERT(s_idleThread != 0);
+
+    Remove_From_Thread_Queue(&s_runQueue[0], s_idleThread);
+    Add_To_Front_Of_Thread_Queue(&s_runQueue[MAX_QUEUE_LEVEL - 1], s_idleThread);
+
+    kthread = Get_Front_Of_All_Thread_List(&s_allThreadList);
+    while (kthread != 0) {
+        kthread->currentReadyQueue = 0;
+        kthread = Get_Next_In_All_Thread_List(kthread);
+    }
 }
 
 /*
@@ -622,7 +731,7 @@ void Exit(int exitCode)
     struct Kernel_Thread* current = g_currentThread;
 
     if (Interrupts_Enabled())
-	Disable_Interrupts();
+        Disable_Interrupts();
 
     /* Thread is dead */
     current->exitCode = exitCode;
@@ -633,6 +742,27 @@ void Exit(int exitCode)
 
     /* Notify the thread's owner, if any */
     Wake_Up(&current->joinQueue);
+
+    // When the process is doing some privileged operations,
+    // it won't exit by calling `Sys_Exit` actively, which
+    // will cause memory leak. So I move the section here to
+    // fix it
+    if (current->userContext != 0) {
+        Enable_Interrupts();
+        Detach_User_Context(current);
+        Disable_Interrupts();
+    }
+
+    // Clean up all semaphores the thread uses
+    for (int i = 0; i < MAX_SEMAPHORES_REFS; ++i) {
+        int id = current->semaphores[i];
+        if (id != REF_TO_NO_SEMAPHORE) {
+            --g_allSemaphores[id].refCount;
+            if (g_allSemaphores[id].refCount == 0) {
+                Destroy_Semaphore(id);
+            }
+        }
+    }
 
     /* Remove the thread's implicit reference to itself. */
     Detach_Thread(g_currentThread);
@@ -666,7 +796,7 @@ int Join(struct Kernel_Thread* kthread)
 
     /* Wait for it to die */
     while (kthread->alive) {
-	Wait(&kthread->joinQueue);
+        Wait(&kthread->joinQueue);
     }
 
     /* Get thread exit code. */
@@ -698,12 +828,12 @@ struct Kernel_Thread* Lookup_Thread(int pid)
 
     result = Get_Front_Of_All_Thread_List(&s_allThreadList);
     while (result != 0) {
-	if (result->pid == pid) {
-	    if (g_currentThread != result->owner)
-		result = 0;
-	    break;
-	}
-	result = Get_Next_In_All_Thread_List(result);
+        if (result->pid == pid) {
+            if (g_currentThread != result->owner)
+                result = 0;
+            break;
+        }
+        result = Get_Next_In_All_Thread_List(result);
     }
 
     End_Int_Atomic(iflag);
@@ -753,9 +883,9 @@ void Wake_Up(struct Thread_Queue* waitQueue)
      * transferring each one to the run queue.
      */
     while (kthread != 0) {
-	next = Get_Next_In_Thread_Queue(kthread);
-	Make_Runnable(kthread);
-	kthread = next;
+        next = Get_Next_In_Thread_Queue(kthread);
+        Make_Runnable(kthread);
+        kthread = next;
     }
 
     /* The wait queue is now empty. */
@@ -776,9 +906,9 @@ void Wake_Up_One(struct Thread_Queue* waitQueue)
     best = Find_Best(waitQueue);
 
     if (best != 0) {
-	Remove_Thread(waitQueue, best);
-	Make_Runnable(best);
-	/*Print("Wake_Up_One: waking up %x from %x\n", best, g_currentThread); */
+        Remove_Thread(waitQueue, best);
+        Make_Runnable(best);
+        /*Print("Wake_Up_One: waking up %x from %x\n", best, g_currentThread); */
     }
 }
 
@@ -840,13 +970,13 @@ void Dump_All_Thread_List(void)
 
     Print("[");
     while (kthread != 0) {
-	++count;
-	Print("<%lx,%lx,%lx>",
-	    (ulong_t) Get_Prev_In_All_Thread_List(kthread),
-	    (ulong_t) kthread,
-	    (ulong_t) Get_Next_In_All_Thread_List(kthread));
-	KASSERT(kthread != Get_Next_In_All_Thread_List(kthread));
-	kthread = Get_Next_In_All_Thread_List(kthread);
+        ++count;
+        Print("<%lx,%lx,%lx>",
+            (ulong_t) Get_Prev_In_All_Thread_List(kthread),
+            (ulong_t) kthread,
+            (ulong_t) Get_Next_In_All_Thread_List(kthread));
+        KASSERT(kthread != Get_Next_In_All_Thread_List(kthread));
+        kthread = Get_Next_In_All_Thread_List(kthread);
     }
     Print("]\n");
     Print("%d threads are running\n", count);

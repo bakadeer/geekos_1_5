@@ -33,8 +33,8 @@ static __inline__ void Set_Size_And_Base_Pages(
     KASSERT(numPages > 0);
     numPages -= 1;
 
-    desc->sizeLow     = numPages & 0xFFFF;
-    desc->sizeHigh    = (numPages >> 16) & 0x0F;
+    desc->segLimitLow     = numPages & 0xFFFF;
+    desc->segLimitHigh    = (numPages >> 16) & 0x0F;
     desc->baseLow     = baseAddr & 0xFFFFFF;
     desc->baseHigh    = (baseAddr >> 24) & 0xFF;
     desc->granularity = 1;  /* size in pages */
@@ -46,8 +46,8 @@ static __inline__ void Set_Size_And_Base_Bytes(
     ulong_t numBytes
 )
 {
-    desc->sizeLow     = numBytes & 0xFFFF;
-    desc->sizeHigh    = (numBytes >> 16) & 0x0F;
+    desc->segLimitLow     = numBytes & 0xFFFF;
+    desc->segLimitHigh    = (numBytes >> 16) & 0x0F;
     desc->baseLow     = baseAddr & 0xFFFFFF;
     desc->baseHigh    = (baseAddr >> 24) & 0xFF;
     desc->granularity = 0;  /* size in bytes */

@@ -19,7 +19,6 @@
 #include <geekos/fileio.h>
 #include <geekos/elf.h>
 
-
 /**
  * From the data of an ELF executable, determine how its segments
  * need to be loaded into memory.
@@ -32,6 +31,40 @@
 int Parse_ELF_Executable(char *exeFileData, ulong_t exeFileLength,
     struct Exe_Format *exeFormat)
 {
-    TODO("Parse an ELF executable image");
-}
+    elfHeader fileHeader;
+    programHeader *programHeaders;
+    const int MAGIC_NUMBER_LEN = 4;
+    const char MAGIC_NUMBER[4] = {0x7F, 0x45, 0x4C, 0x46};
 
+    if (exeFileData == 0 || exeFormat == 0) {
+        return EINVALID;
+    }
+
+    if (exeFileLength < sizeof(fileHeader)) {
+        return ENOEXEC;
+    }
+    if (!memcmp(MAGIC_NUMBER, exeFileData, sizeof(char) * MAGIC_NUMBER_LEN)) {
+        return ENOEXEC;
+    }
+
+    fileHeader = *((elfHeader*) exeFileData);
+    if (fileHeader.phnum > EXE_MAX_SEGMENTS) {
+        return ENOEXEC;
+    }
+
+    programHeaders = (programHeader*) Malloc(sizeof(programHeader) * fileHeader.phnum);
+    for (int i = 0; i < fileHeader.phnum; ++i) {
+        programHeaders[i] = ((programHeader*) (exeFileData + fileHeader.phoff))[i];
+
+        exeFormat->segmentList[i].offsetInFile = programHeaders[i].offset;
+        exeFormat->segmentList[i].lengthInFile = programHeaders[i].fileSize;
+        exeFormat->segmentList[i].startAddress = programHeaders[i].vaddr;
+        exeFormat->segmentList[i].sizeInMemory = programHeaders[i].memSize;
+        exeFormat->segmentList[i].protFlags = programHeaders[i].flags;
+    }
+    exeFormat->numSegments = fileHeader.phnum;
+    exeFormat->entryAddr = fileHeader.entry;
+    
+    Free(programHeaders);
+    return 0;
+}

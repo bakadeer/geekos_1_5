@@ -29,13 +29,13 @@ struct TSS;
  * The general format of a segment descriptor.
  */
 struct Segment_Descriptor {
-    ushort_t sizeLow        PACKED ;
+    ushort_t segLimitLow        PACKED ;
     uint_t baseLow     : 24 PACKED ;
     uint_t type        : 4  PACKED ;
     uint_t system      : 1  PACKED ;
     uint_t dpl         : 2  PACKED ;
     uint_t present     : 1  PACKED ;
-    uint_t sizeHigh    : 4  PACKED ;
+    uint_t segLimitHigh    : 4  PACKED ;
     uint_t avail       : 1  PACKED ;
     uint_t reserved    : 1  PACKED ;  /* set to zero */
     uint_t dbBit       : 1  PACKED ;

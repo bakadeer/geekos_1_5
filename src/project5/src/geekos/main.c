@@ -66,6 +66,7 @@ void Main(struct Boot_Info* bootInfo)
     Init_TSS();
     Init_Interrupts();
     Init_VM(bootInfo);
+    Print("Done!\n");
     Init_Scheduler();
     Init_Traps();
     Init_Timer();
@@ -84,17 +85,33 @@ void Main(struct Boot_Info* bootInfo)
 
 
 
-
     Spawn_Init_Process();
 
     /* Now this thread is done. */
     Exit(0);
 }
 
-
+/*
+ * Project 0
+ */
+void Say_Hello(void) {
+    Print("Hello from\n");
+    while (1) {
+        Keycode keycode = Wait_For_Key();
+        if (((keycode & KEY_RELEASE_FLAG) == 0) && ((keycode & KEY_SPECIAL_FLAG) == 0)) {
+            if (keycode == (KEY_CTRL_FLAG | 'd')) {
+                Print("Executation ends");
+                break;
+            }
+            char code = keycode & ASCII_AREA;
+            Print("%c", code);
+        }
+    }
+}
 
 static void Mount_Root_Filesystem(void)
 {
+    Print("Mounting /" ROOT_PREFIX " filesystem...\n");
     if (Mount(ROOT_DEVICE, ROOT_PREFIX, "pfat") != 0)
 	Print("Failed to mount /" ROOT_PREFIX " filesystem\n");
     else
@@ -105,10 +122,9 @@ static void Mount_Root_Filesystem(void)
 
 
 
-
-
-
 static void Spawn_Init_Process(void)
 {
-    TODO("Spawn the init process");
+    // TODO("Spawn the init process");
+
+    Spawn("/c/p5test.exe", "/c/p5test.exe", NULL);
 }
