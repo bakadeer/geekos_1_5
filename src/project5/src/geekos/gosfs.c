@@ -36,17 +36,17 @@ int debugGOSFS = 0;
 
 struct GOSFS_Superblock {
     ulong_t magic;
-    ulong_t supersize;      /* size of superblock in bytes */
-    ulong_t size;           /* number of blocks of whole fs*/
-    struct GOSFS_Dir_Entry inodes[GOSFS_NUM_INODES]; /* array of inodes of this fs*/
-    uchar_t bitSet[];      /* used/unused blocks */
+    ulong_t supersize;                                  /* size of superblock in bytes */
+    ulong_t size;                                       /* number of blocks of whole fs*/
+    struct GOSFS_Dir_Entry inodes[GOSFS_NUM_INODES];    /* array of inodes of this fs*/
+    uchar_t bitSet[];                                   /* used/unused blocks */
 };
 
 struct GOSFS_Directory 
 {
     char filename[GOSFS_FILENAME_MAX+1];    // filename
-    ulong_t type;           // type of entry
-    ulong_t inode;          // referenced inode number
+    ulong_t type;                           // type of entry
+    ulong_t inode;                          // referenced inode number
 };
 
 /* on mount we create a GOSFS_Instance to work on */
@@ -840,9 +840,9 @@ int GetPhysicalBlockByLogical(struct GOSFS_Instance* p_instance, struct GOSFS_Di
     // 间接块
     else if (blockNum < GOSFS_NUM_DIRECT_BLOCKS + (GOSFS_NUM_INDIRECT_PTR_PER_BLOCK * GOSFS_NUM_INDIRECT_BLOCKS))
     {
-        indirectPtr = ((((blockNum+1) - (GOSFS_NUM_DIRECT_BLOCKS+1)) / GOSFS_NUM_INDIRECT_PTR_PER_BLOCK)) + 1;
-        indirectPtrOffset = (((blockNum+1) - (GOSFS_NUM_DIRECT_BLOCKS+1)) % GOSFS_NUM_INDIRECT_PTR_PER_BLOCK);
-        inodePtr = GOSFS_NUM_DIRECT_BLOCKS + indirectPtr -1;
+        indirectPtr = ((((blockNum+1) - (GOSFS_NUM_DIRECT_BLOCKS+1)) / GOSFS_NUM_INDIRECT_PTR_PER_BLOCK)) + 1;//只能为1，因为间接块一个
+        indirectPtrOffset = (((blockNum+1) - (GOSFS_NUM_DIRECT_BLOCKS+1)) % GOSFS_NUM_INDIRECT_PTR_PER_BLOCK);//间接块的偏移
+        inodePtr = GOSFS_NUM_DIRECT_BLOCKS + indirectPtr -1;// 因为直接块八个，间接块一个，所以这个指针只能指向第九个
         Debug(
             "GetPhysicalBlockByLogical: blocknum: %ld, indirectPtr: %d, indirectPtrOffset: %d, inodePtr: %d\n",
             blockNum, 
@@ -870,7 +870,7 @@ int GetPhysicalBlockByLogical(struct GOSFS_Instance* p_instance, struct GOSFS_Di
 	// 二次间接块
 	else
 	{
-		indirectPtr = ((((blockNum+1) - (GOSFS_NUM_DIRECT_BLOCKS + (GOSFS_NUM_INDIRECT_BLOCKS * GOSFS_NUM_PTRS_PER_BLOCK) + 1)) / (GOSFS_NUM_INDIRECT_PTR_PER_BLOCK * GOSFS_NUM_INDIRECT_PTR_PER_BLOCK))) + 1;
+		indirectPtr = ((((blockNum + 1) - (GOSFS_NUM_DIRECT_BLOCKS + (GOSFS_NUM_INDIRECT_BLOCKS * GOSFS_NUM_PTRS_PER_BLOCK) + 1)) / (GOSFS_NUM_INDIRECT_PTR_PER_BLOCK * GOSFS_NUM_INDIRECT_PTR_PER_BLOCK))) + 1;
         indirectPtrOffset = ((((blockNum + 1) - (GOSFS_NUM_DIRECT_BLOCKS + (GOSFS_NUM_INDIRECT_BLOCKS * GOSFS_NUM_PTRS_PER_BLOCK) + 1)) / (GOSFS_NUM_INDIRECT_PTR_PER_BLOCK)));
         indirect2xPtrOffset = ((((blockNum + 1) - (GOSFS_NUM_DIRECT_BLOCKS + (GOSFS_NUM_INDIRECT_BLOCKS * GOSFS_NUM_PTRS_PER_BLOCK) + 1)) % (GOSFS_NUM_INDIRECT_PTR_PER_BLOCK)));
         inodePtr = GOSFS_NUM_DIRECT_BLOCKS + (GOSFS_NUM_INDIRECT_BLOCKS * GOSFS_NUM_PTRS_PER_BLOCK) + indirectPtr -1;
@@ -1544,6 +1544,7 @@ static int GOSFS_Open(
     pFileEntry->inode = pInode;
     pFileEntry->instance = p_instance;
     
+    // pfat中filePos也是0
     struct File *file = Allocate_File(&s_gosfsFileOps, 0, pInode->size, pFileEntry, mode, mountPoint);
     if (file == 0) {
         rc = ENOMEM;
@@ -1630,7 +1631,7 @@ static int GOSFS_Create_Directory(struct Mount_Point *mountPoint, const char *pa
     p_buff = 0;
     Set_Bit(p_instance->superblock.bitSet, freeBlock);
 
-    p_instance->superblock.inodes[freeInode].size=1;        // directories start with 2 entries ("." and "..")
+    p_instance->superblock.inodes[freeInode].size=1;        
     p_instance->superblock.inodes[freeInode].flags = GOSFS_DIRENTRY_ISDIRECTORY | GOSFS_DIRENTRY_USED;
     memset (p_instance->superblock.inodes[freeInode].acl, '\0', sizeof (struct VFS_ACL_Entry) * VFS_MAX_ACL_ENTRIES);
     
@@ -1694,7 +1695,7 @@ static int GOSFS_Open_Directory(
         goto finish;
     }
     
-    // put directory listing in file-data
+    // 读取目录
     for (i=0; i < GOSFS_NUM_DIRECT_BLOCKS; i++)
     {        
         blockNum = inode->blockList[i];
@@ -1903,12 +1904,10 @@ static int GOSFS_Sync(struct Mount_Point *mountPoint)
 {
     //TODO("GeekOS filesystem sync operation");
     int rc=0;
-    //ulong_t i=0;
     struct GOSFS_Instance *p_instance = (struct GOSFS_Instance *)mountPoint->fsData;
     struct FS_Buffer    *p_buff=0;
     Mutex_Lock(&p_instance->lock);
     
-    // we always need to write the superblock to disk
     rc = WriteSuperblock(p_instance);
     
 finish:
@@ -1950,7 +1949,6 @@ static int GOSFS_Format(struct Block_Device *blockDev)
     gosfs_cache = Create_FS_Buffer_Cache(blockDev, GOSFS_FS_BLOCK_SIZE);
     
     Debug("GOSFS_Format: About to create root-directory\n");
-    // create root directory entry
    
     // 建立超级块 
     superblock = Malloc(byteCountSuperblock);
@@ -1969,7 +1967,6 @@ static int GOSFS_Format(struct Block_Device *blockDev)
     // 标记根目录块为已使用
     Set_Bit(superblock->bitSet, blockCountSuperblock);
 
-    // 初始化根目录块（. 和 ..）
     rc = Get_FS_Buffer(gosfs_cache, blockCountSuperblock, &p_buff);
     if (rc == 0) {
         Debug("GOSFS_Format: CreateFirstDirectoryBlock for root directory\n");
@@ -2008,7 +2005,7 @@ static int GOSFS_Format(struct Block_Device *blockDev)
         
         Modify_FS_Buffer(gosfs_cache, p_buff);
         Release_FS_Buffer(gosfs_cache, p_buff);
-        // Debug("writing block %ld\n",i);
+        // Debug("GOSFS_Format:writing block %ld\n",i);
     
     }
 
@@ -2022,7 +2019,7 @@ finish:
  */
 static int GOSFS_Mount(struct Mount_Point *mountPoint)
 {
-    Print("GeekOS filesystem mount operation\n");
+    Print("GOSFS_Mount: GeekOS filesystem mount operation\n");
     struct FS_Buffer_Cache        *gosfs_cache = 0;
     struct FS_Buffer            *p_buff = 0;
     struct GOSFS_Superblock        *superblock = 0;
@@ -2036,26 +2033,26 @@ static int GOSFS_Mount(struct Mount_Point *mountPoint)
     rc = Get_FS_Buffer(gosfs_cache, 0, &p_buff) ;
     superblock = (struct GOSFS_Superblock*) p_buff->data;
 
-    Print("found magic:%lx\n",superblock->magic);//魔数检查
+    Print("GOSFS_Mount: found magic:%lx\n",superblock->magic);//魔数检查
     if (superblock->magic!=GOSFS_MAGIC)
     {
-        Print("GOSFS_Mount ERROR: does not seem to be a GOSFS filesystem, try format first\n");
+        Print("GOSFS_Mount: ERROR does not seem to be a GOSFS filesystem, try format first\n");
         rc = -1;
         goto finish;
     }
-    Print("superblock size: %ld Byte\n",superblock->supersize);
-    Print("number of blocks of whole fs %ld bocks\n",superblock->size);
+    Print("GOSFS_Mount: superblock size: %ld Byte\n",superblock->supersize);
+    Print("GOSFS_Mount: number of blocks of whole fs %ld bocks\n",superblock->size);
 
     numBytes = superblock->supersize;
     numBlocks = (numBytes / GOSFS_FS_BLOCK_SIZE)+1;
-        Print("superblock spreads %ld blocks\n",numBlocks);
-    /* 创建文件系统实例 */
+        Print("GOSFS_Mount: superblock spreads %ld blocks\n",numBlocks);
+    // 创建文件系统实例
     int sizeofInstance=sizeof(struct GOSFS_Instance) + FIND_NUM_BYTES(superblock->size);
-    Debug("size of instance %d bytes\n",sizeofInstance);
+    Debug("GOSFS_Mount: size of instance %d bytes\n",sizeofInstance);
     rc = Release_FS_Buffer(gosfs_cache, p_buff);
     if (rc<0)
     {
-        Print("Unable to release fs_buffer\n");
+        Print("GOSFS_Mount: Unable to release fs_buffer\n");
         rc = -1;
         goto finish;
     }
@@ -2065,7 +2062,7 @@ static int GOSFS_Mount(struct Mount_Point *mountPoint)
     instance = Malloc(sizeofInstance);
     if (instance==0)
     {
-        Print("Malloc failed to allocate memory\n");
+        Print("GOSFS_Mount: Malloc failed to allocate memory\n");
         rc=ENOMEM;
         goto finish;
     }
@@ -2092,7 +2089,7 @@ static int GOSFS_Mount(struct Mount_Point *mountPoint)
         rc = Release_FS_Buffer(gosfs_cache, p_buff);
         if (rc<0)
         {
-            Print("Unable to release fs_buffer\n");
+            Print("GOSFS_Mount: Unable to release fs_buffer\n");
             rc = -1;
             goto finish;
         }
